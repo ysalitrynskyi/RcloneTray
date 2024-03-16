@@ -44,9 +44,9 @@ const RcloneBinaryName = process.platform === 'win32' ? 'rclone.exe' : 'rclone'
  */
 const RcloneBinaryBundled = app.isPackaged
   // When packed, the rclone is placed under the resource directory.
-  ? path.join(process.resourcesPath, 'rclone', process.platform, RcloneBinaryName)
+  ? path.join(process.resourcesPath, 'rclone', process.platform, process.arch, RcloneBinaryName)
   // When unpacked and in dev, rclone directory is whithin the app directory.
-  : path.join(app.getAppPath(), 'rclone', process.platform, RcloneBinaryName)
+  : path.join(app.getAppPath(), 'rclone', process.platform, process.arch, RcloneBinaryName)
 
 /**
  * System's temp directory
@@ -1196,14 +1196,22 @@ const serveStart = function (protocol, bookmark) {
     throw Error(`${bookmark.$name} is already serving.`)
   }
 
-  proc.create([
+  // Initialize command array with base serve command
+  let command = [
     'serve',
     protocol,
     getBookmarkRemoteWithRoot(bookmark),
-    '--attr-timeout', Math.max(1, parseInt(settings.get('rclone_cache_files'))) + 's',
-    '--dir-cache-time', Math.max(1, parseInt(settings.get('rclone_cache_directories'))) + 's',
     '-vv'
-  ])
+  ]
+
+  if (protocol !== 'restic') {
+    if (protocol !== 'webdav') {
+      command.push('--attr-timeout', Math.max(1, parseInt(settings.get('rclone_cache_files'))) + 's')
+    }
+    command.push('--dir-cache-time', Math.max(1, parseInt(settings.get('rclone_cache_directories'))) + 's')
+  }
+
+  proc.create(command)
   proc.set('protocol', protocol)
   fireRcloneUpdateActions()
 }

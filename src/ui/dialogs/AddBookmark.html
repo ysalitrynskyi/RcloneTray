@@ -11,7 +11,7 @@
        */
       window.renderAvailableProvidersSelectOptions = function (selectElement) {
         let optionsContainer = document.createDocumentFragment()
-        let providers = window.$main.rclone.getProviders()
+        let providers = window.$main.rclone.providers()
         let emptyOption = document.createElement('option')
         emptyOption.value = ''
         emptyOption.innerHTML = '&mdash; Select Provider &mdash;'
@@ -42,14 +42,14 @@
           if (this.selectedOptions.length > 0 && this.selectedOptions[0].hasOwnProperty('providerObject')) {
             let provider = this.selectedOptions[0].providerObject
             document.title = `Create new ${provider.Name} Bookmark (${provider.Description})`
-            renderBookmarkSettings(bookmarkSettingsWrapper, this.value)
+            window.api.renderBookmarkSettings(bookmarkSettingsWrapper, this.value)
             providerSettingsWrapper.style.display = null
           } else {
             document.title = 'Create new Bookmark'
             providerSettingsWrapper.style.display = 'none'
             bookmarkSettingsWrapper.innerHTML = ''
           }
-          resizeToContent()
+          window.electronAPI.resizeToContent()
         })
         providersListSelect.dispatchEvent(new Event('change'))
         renderAvailableProvidersSelectOptions(providersListSelect)
@@ -57,11 +57,11 @@
         theForm.addEventListener('submit', function (event) {
           event.preventDefault();
 
-          let data = getTheFormData(this)
+          let data = window.electronAPI.getTheFormData(this)
 
           $main.rclone.addBookmark(data.type, data.name, data.options)
             .then(window.close)
-            .catch(window.errorBox)
+            .catch(window.electronAPI.errorBox)
         })
       });
     </script>

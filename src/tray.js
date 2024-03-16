@@ -39,49 +39,65 @@ const fileExplorerLabel = process.platform === 'darwin'
 /**
  * Do action with bookmark
  * @param {string} action
- * @param ...args
+ * @param args
  */
 const bookmarkActionRouter = function (action, ...args) {
-  if (action === 'mount') {
-    rclone.mount(this)
-  } else if (action === 'unmount') {
-    rclone.unmount(this)
-  } else if (action === 'open-mounted') {
-    rclone.openMountPoint(this)
-  } else if (action === 'download') {
-    rclone.download(this)
-  } else if (action === 'stop-downloading') {
-    rclone.stopDownload(this)
-  } else if (action === 'upload') {
-    rclone.upload(this)
-  } else if (action === 'stop-uploading') {
-    rclone.stopUpload(this)
-  } else if (action === 'toggle-automatic-upload') {
-    rclone.toggleAutomaticUpload(this)
-  } else if (action === 'open-local') {
-    rclone.openLocal(this)
-  } else if (action === 'serve-start') {
-    rclone.serveStart(args[0], this)
-  } else if (action === 'serve-stop') {
-    rclone.serveStop(args[0], this)
-  } else if (action === 'open-ncdu') {
-    rclone.openNCDU(this)
-  } else if (action === 'open-web-browser') {
-    shell.openExternal(args[0])
-  } else if (action === 'open-config') {
-    shell.openItem(rclone.getConfigFile())
-  } else if (action === 'delete-bookmark') {
-    rclone.deleteBookmark(this.$name)
-  } else {
-    console.error('No such action', action, args, this)
+  switch (action) {
+    case 'mount':
+      rclone.mount(this)
+      break
+    case 'unmount':
+      rclone.unmount(this)
+      break
+    case 'open-mounted':
+      rclone.openMountPoint(this)
+      break
+    case 'download':
+      rclone.download(this)
+      break
+    case 'stop-downloading':
+      rclone.stopDownload(this)
+      break
+    case 'upload':
+      rclone.upload(this)
+      break
+    case 'stop-uploading':
+      rclone.stopUpload(this)
+      break
+    case 'toggle-automatic-upload':
+      rclone.toggleAutomaticUpload(this)
+      break
+    case 'open-local':
+      rclone.openLocal(this)
+      break
+    case 'serve-start':
+      rclone.serveStart(args[0], this)
+      break
+    case 'serve-stop':
+      rclone.serveStop(args[0], this)
+      break
+    case 'open-ncdu':
+      rclone.openNCDU(this)
+      break
+    case 'open-web-browser':
+      shell.openExternal(args[0])
+      break
+    case 'open-config':
+      shell.openPath(rclone.getConfigFile())
+      break
+    case 'delete-bookmark':
+      rclone.deleteBookmark(this.$name)
+      break
+    default:
+      console.error('No such action', action, args, this)
   }
 }
 
 /**
  * Bookmark submenu
  *
- * @param {{bookmark}}
  * @returns {{}}
+ * @param bookmark
  */
 const generateBookmarkActionsSubmenu = function (bookmark) {
   // If by some reason bookmark is broken, then show actions menu.
@@ -383,24 +399,19 @@ const init = function () {
     return
   }
 
-  if (process.platform === 'win32') {
-    icons.default = path.join(__dirname, 'ui', 'icons', 'icon.ico')
-    icons.connected = path.join(__dirname, 'ui', 'icons', 'icon-connected.ico')
-  } else if (process.platform === 'linux') {
-    // Using bigger images fixes the problem with blurry icon in some DE.
-    icons.default = path.join(__dirname, 'ui', 'icons', 'icon.png')
-    icons.connected = path.join(__dirname, 'ui', 'icons', 'icon-connected.png')
+  // Define icons based on platform
+  const iconPath = path.join(__dirname, 'ui', 'icons')
+
+  if (process.platform === 'darwin') {
+    icons.default = path.join(iconPath, 'iconTemplate.png')
+    icons.connected = path.join(iconPath, 'icon-connectedTemplate.png')
   } else {
-    icons.default = path.join(__dirname, 'ui', 'icons', 'iconTemplate.png')
-    icons.connected = path.join(__dirname, 'ui', 'icons', 'icon-connectedTemplate.png')
+    icons.default = `${iconPath}/icon${process.platform === 'win32' ? '.ico' : '.png'}`
+    icons.connected = `${iconPath}/icon-connected${process.platform === 'win32' ? '.ico' : '.png'}`
   }
 
   // Add system tray icon.
   trayIndicator = new Tray(icons.default)
 }
 
-// Exports.
-module.exports = {
-  refresh: refresh,
-  init: init
-}
+module.exports = { refresh, init }

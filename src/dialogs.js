@@ -32,11 +32,9 @@ const dialogsSingletoneInstances = {}
  * @private
  */
 const createNewDialog = function (dialogName, options, props) {
-  // Use $singleId options property with special meaning of not allowing,
-  // dialog to have multiple instances.
-  let singleId = options && options.hasOwnProperty('$singleId')
+  let singleId = options && options.$singleId
   if (singleId) {
-    delete options['$singleId']
+    delete options.$singleId
     singleId = dialogName + '/' + singleId.toString()
     if (dialogsSingletoneInstances.hasOwnProperty(singleId) && dialogsSingletoneInstances[singleId]) {
       dialogsSingletoneInstances[singleId].focus()
@@ -45,7 +43,7 @@ const createNewDialog = function (dialogName, options, props) {
   }
 
   // Dialog options.
-  options = Object.assign({
+  options = {
     maximizable: false,
     minimizable: true,
     resizable: false,
@@ -57,16 +55,18 @@ const createNewDialog = function (dialogName, options, props) {
     autoHideMenuBar: true,
     skipTaskbar: false,
     webPreferences: {
+      enableRemoteModule: true,
       backgroundThrottling: false,
       preload: path.join(__dirname, 'dialogs-preload.js'),
       devTools: isDev,
       defaultEncoding: 'UTF-8',
-      contextIsolation: false,
+      contextIsolation: true,
       nodeIntegration: false,
       webviewTag: false,
       sandbox: true
-    }
-  }, options)
+    },
+    ...options
+  }
 
   // Instantinate the window.
   let theDialog = new BrowserWindow(options)
@@ -85,7 +85,7 @@ const createNewDialog = function (dialogName, options, props) {
   theDialog.$props = props || {}
 
   theDialog.on('ready-to-show', theDialog.show)
-  theDialog.on('show', app.focus)
+  // theDialog.on('show', app.focus)
 
   // and load the index.html of the app.
   theDialog.loadFile(path.join(__dirname, 'ui', 'dialogs', dialogName + '.html'))
@@ -124,11 +124,11 @@ const createNewDialog = function (dialogName, options, props) {
  * Show About dialog
  */
 const about = function () {
-  let aboutDialog = createNewDialog('About', {
+  const aboutDialog = createNewDialog('About', {
     $singleId: 1,
     title: 'About',
     width: 400,
-    height: 360,
+    height: 440,
     minimizable: false,
     alwaysOnTop: true,
     acceptFirstMouse: true,
@@ -205,23 +205,22 @@ const errorMultiInstance = function () {
  * @returns {boolean} Should exit
  */
 const uncaughtException = function (detail) {
+  const errorMessage = detail instanceof Error ? `${detail.message}\n${detail.stack}` : detail.toString()
   if (app.isReady()) {
-    // When error happen when app is ready then seems to be happen on late stage,
-    // and user should decide to ignore or to exit (because could have active transfers)
-    let choice = dialog.showMessageBox(null, {
+    dialog.showMessageBox({
       type: 'warning',
       buttons: ['Quit RcloneTray', 'Cancel'],
       title: 'Error',
       message: 'Unexpected runtime error.',
-      detail: (detail || '').toString()
+      detail: errorMessage
+    }).then((result) => {
+      if (result.response === 0) {
+        app.quit()
+      }
     })
-    app.focus()
-    return choice === 0
   } else {
-    // This message will be shown on very early stage before most of the app is loaded.
-    dialog.showErrorBox('Unexpected runtime error. RcloneTray cannot starts.', (detail || '').toString())
-    app.focus()
-    return true
+    dialog.showErrorBox('Unexpected runtime error. RcloneTray cannot start.', errorMessage)
+    app.exit(1)
   }
 }
 

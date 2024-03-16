@@ -1,25 +1,38 @@
-# <img src="https://raw.githubusercontent.com/dimitrov-adrian/RcloneTray/master/src/ui/icons/source-icon-color.png" width="48px" align="center" alt="RcloneTray Icon" /> RcloneTray
+# <img src="https://raw.githubusercontent.com/ysalitrynskyi/RcloneTray/master/src/ui/icons/source-icon-color.png" width="48px" align="center" alt="RcloneTray Icon" /> RcloneTray
 
-[![Build Status](https://travis-ci.org/dimitrov-adrian/RcloneTray.svg?branch=master)](https://travis-ci.org/dimitrov-adrian/rclonetray)
-[![JavaScript Standard Style](https://img.shields.io/badge/code%20style-standard-brightgreen.svg)](http://standardjs.com)
-![Dependencies](https://david-dm.org/dimitrov-adrian/RcloneTray/status.svg)
+![GitHub release](https://img.shields.io/github/release/ysalitrynskyi/RcloneTray.svg)
 
 RcloneTray is simple cross-platform GUI for [Rclone](https://rclone.org/) and is intended to provide a free altenative to [Mountain Duck](https://mountainduck.io/)
 
 
 ## Overview
-![Screenshot](https://raw.githubusercontent.com/dimitrov-adrian/RcloneTray/master/screenshot.png)
+
+This is a fork of [RcloneTray](https://github.com/dimitrov-adrian/RcloneTray) with the following changes:
+
+2024-03-21 - v1.1.0:
+- Updated npm packages
+- Fixed "WebDAV" and "Restic" on macOS
+- Updated rclone for all systems and added support for ARM64
+- Updated update-rclone-binaries.sh to download binaries for all supported architectures
+- Fixed tray icon size on macOS
+- Fixed uncaughtException() to quit the app on button click
+- Fixed popup focus on macOS
+- Updated app icon
+- Changed About dialog
+
+Known bugs:
+- Settings page is not loading properly
+
+![Screenshot](https://raw.githubusercontent.com/ysalitrynskyi/RcloneTray/master/screenshot.png)
 
 
 ## Requirements
-Only 64bit binaries are provided in distributions.
-
-Supported operation systems:
-* Windows 7/8/10 (x64)
-* macOS 10.10 and later
+Supported operating systems:
+* Windows 7/8/10/11 (x64)
+* macOS 10.10 and later (Intel and Apple Silicon)
 * GNU/Linux (x64), DE with tray icons support
 
-To get mount function working, you need to install extra packages:
+To get mount function working, you need to install extra packages (alternatively you can mount using WebDAV):
 * Windows - http://www.secfs.net/winfsp/download/
 * macOS - https://osxfuse.github.io/
 * Linux - fuse
@@ -33,7 +46,7 @@ Go "Preferences" and from "Rclone" tab, uncheck the option "Use bundled Rclone".
 
 
 ## Downloads
-[Check latest releases](https://github.com/dimitrov-adrian/RcloneTray/releases)
+[Check latest releases](https://github.com/ysalitrynskyi/RcloneTray/releases)
 
 
 ## Contributing
@@ -45,12 +58,20 @@ Any help is welcome, just file an issue or pull request.
 You'll need [Node.js](https://nodejs.org) installed on your computer in order to build this app.
 
 ```bash
-$ git clone https://github.com/dimitrov-adrian/RcloneTray
+$ git clone https://github.com/ysalitrynskyi/RcloneTray
 $ cd RcloneTray
 $ npm install
+```
+
+```bash
 $ npm start
+```
+
+or:
+```bash
+$ npm run dist
 ```
 
 
 ## License
-This project is licensed under the [MIT](https://github.com/dimitrov-adrian/RcloneTray/blob/master/LICENSE.txt) License
+This project is licensed under the [MIT](https://github.com/ysalitrynskyi/RcloneTray/blob/master/LICENSE.txt) License

@@ -1,537 +1,446 @@
 'use strict'
 
-const remote = require('electron').remote
-const remoteElectron = remote.require('electron')
-const currentWindow = remote.getCurrentWindow()
+const { contextBridge, ipcRenderer } = require('electron')
 
-window.$main = {
+contextBridge.exposeInMainWorld('$main', {
   app: {
-    path: remote.app.getAppPath(),
-    name: remote.app.getName(),
-    version: remote.app.getVersion()
+    getPath: () => ipcRenderer.invoke('get-app-path'),
+    getName: () => ipcRenderer.invoke('get-app-name'),
+    getVersion: () => ipcRenderer.invoke('get-app-version')
   },
-  refreshTray: remote.require('./tray').refresh,
-  rclone: remote.require('./rclone'),
-  settings: remote.require('./settings')
-}
-
-/**
- * Set autostart
- */
-window.$main.setAutostart = function (state) {
-  remoteElectron.app.setLoginItemSettings({
-    openAtLogin: !!state
-  })
-}
-
-/**
- * Check if the app is set to autostart
- * @returns {boolean}
- */
-window.$main.isAutostart = function () {
-  return remoteElectron.app.getLoginItemSettings().openAtLogin
-}
-
-/**
- * Popup context menu from given template
- * @param {Array}
- */
-window.popupContextMenu = function (menuTemplate) {
-  remote.Menu.buildFromTemplate(menuTemplate).popup()
-}
-
-/**
- * Get assigned window props
- * @returns {{}}
- */
-window.$main.getProps = function () {
-  return currentWindow.$props
-}
-
-/**
- * Show node's message box
- * @param {string} message
- * @returns {number}
- */
-window.messageBox = function (message) {
-  return remoteElectron.dialog.showMessageBox(
-    currentWindow, {
-      message: message
-    })
-}
-
-/**
- * Override the standard confirm dialog
- * @param {string} message
- * @returns {boolean}
- */
-window.confirm = function (message) {
-  let choice = remoteElectron.dialog.showMessageBox(
-    currentWindow, {
-      buttons: ['Yes', 'No'],
-      message: message
-    })
-  return choice === 0
-}
-
-/**
- * Show error box
- * @param {string} message
- */
-window.errorBox = function (message) {
-  remoteElectron.dialog.showMessageBox(
-    currentWindow, {
-      message: message.toString()
-    })
-}
-
-/**
- * Show OS notification shorthand
- * @param {string} message
- */
-window.notification = function (message) {
-  new remoteElectron.Notification({
-    body: message.toString()
-  }).show()
-}
-
-/**
- * Resize current window to conent
- */
-window.resizeToContent = function () {
-  let newHeight = document.body.scrollHeight + (window.outerHeight - window.innerHeight)
-  if (newHeight > window.screen.height * 0.85) {
-    newHeight = Math.ceil(window.screen.height * 0.85)
-    document.body.style.overflow = null
-  } else {
-    document.body.style.overflow = 'hidden'
-  }
-
-  if (process.platform === 'darwin') {
-    currentWindow.setSizeAsync(window.outerWidth, newHeight)
-  } else {
-    window.resizeTo(window.outerWidth, newHeight)
-  }
-}
-window.addEventListener('load', window.resizeToContent)
-
-/**
- * Directory selector dialog
- * @param {string} defaultDirectory
- * @param {callback} callback
- */
-window.selectDirectory = function (defaultDirectory, callback) {
-  remoteElectron.dialog.showOpenDialog(currentWindow, {
-    title: 'Select Directory',
-    defaultPath: defaultDirectory || remote.app.getPath('home'),
-    properties: [
-      'openDirectory',
-      'createDirectory'
-    ]
-  }, callback)
-}
-
-/**
- * File selector dialog
- * @param {string} defaultFile
- * @param {callback} callback
- */
-window.selectFile = function (defaultFile, callback) {
-  remoteElectron.dialog.showOpenDialog(currentWindow, {
-    title: 'Select File',
-    defaultPath: defaultFile || remote.app.getPath('home'),
-    properties: [
-      'openFile',
-      'showHiddenFiles'
-    ]
-  }, callback)
-}
-
-/**
- * Simple form JSON serializator
- */
-window.getTheFormData = function (form) {
-  let values = {}
-  for (let i = 0; i < form.elements.length; i++) {
-    if (!form.elements[i].name ||
-      form.elements[i].disabled ||
-      form.elements[i].tagName === 'BUTTON' ||
-      (form.elements[i].type === 'radio' && !form.elements[i].checked)
-    ) {
-      continue
+  refreshTray: () => ipcRenderer.send('refresh-tray'),
+  settingsMerge: (data) => ipcRenderer.send('settings-merge', data),
+  getSetting: async (key) => {
+    try {
+      return await ipcRenderer.invoke('get-setting', key)
+    } catch (error) {
+      console.error('Error getting setting:', error)
     }
-
-    let name = form.elements[i].name.split('.')
-    let namespace = null
-    if (name.length > 1) {
-      namespace = name.shift()
-    }
-    name = name.join('.')
-    let value = form.elements[i].value
-    if (form.elements[i].type === 'checkbox' && !form.elements[i].checked) {
-      value = ''
-    }
-    if (form.elements[i].tagName === 'SELECT' && form.elements[i].multiple) {
-      value = Array.from(document.forms[0][2].selectedOptions).map(option => option.value)
-    }
-
-    if (namespace) {
-      if (!values.hasOwnProperty(namespace)) {
-        values[namespace] = {}
+  },
+  rclone: (() => {
+    const invokeIpc = async (channel, ...args) => {
+      try {
+        return await ipcRenderer.invoke(channel, ...args)
+      } catch (error) {
+        console.error(`Error with IPC channel '${channel}':`, error)
       }
-      values[namespace][name] = value
-    } else {
-      values[name] = value
     }
+
+    return {
+      version: () => invokeIpc('get-rclone-version'),
+      providers: () => invokeIpc('get-rclone-providers'),
+      addBookmark: (type, name, options) => invokeIpc('get-rclone-book', type, name, options),
+      delBookmark: (name) => invokeIpc('get-rclone-delete-book', name),
+      updateBookmark: (name, options) => invokeIpc('get-rclone-update-book', name, options),
+      getConfigFile: () => invokeIpc('get-rclone-get-config-file')
+    }
+  })(),
+  setAutostart: (state) => ipcRenderer.send('set-autostart', state),
+  isAutostart: () => ipcRenderer.invoke('is-autostart'),
+  getProps: () => ipcRenderer.invoke('get-props'),
+  loadStyles: async function () {
+    const appPath = await this.app.getPath()
+    const uiLink = document.createElement('link')
+    uiLink.rel = 'stylesheet'
+    uiLink.href = `${appPath}/src/ui/styles/ui.css`
+    document.head.appendChild(uiLink)
+
+    const platformLink = document.createElement('link')
+    platformLink.rel = 'stylesheet'
+    platformLink.href = `${appPath}/src/ui/styles/ui-${process.platform}.css`
+    document.head.appendChild(platformLink)
+  },
+  loadAboutStyles: async function () {
+    const appPath = await this.app.getPath()
+    const aboutLink = document.createElement('link')
+    aboutLink.rel = 'stylesheet'
+    aboutLink.href = `${appPath}/src/ui/styles/about.css`
+    document.head.appendChild(aboutLink)
   }
-  return values
-}
+})
 
-/**
- * Scripts loader
- * @param {string} script
- */
-window.$main.loadStyles = function () {
-  document.write('<link rel="stylesheet" href="' + window.$main.app.path + '/src/ui/styles/ui.css" />')
-  document.write('<link rel="stylesheet" href="' + window.$main.app.path + '/src/ui/styles/ui-' + process.platform + '.css" />')
-}
+contextBridge.exposeInMainWorld('electronAPI', {
+  popupContextMenu: (menuTemplate) => ipcRenderer.send('popup-context-menu', menuTemplate),
+  messageBox: async (message) => {
+    return await ipcRenderer.invoke('show-message-box', { message })
+  },
+  confirm: async (message) => {
+    const choice = await ipcRenderer.invoke('confirm-dialog', { message })
+    return choice === 0
+  },
+  errorBox: (message) => {
+    ipcRenderer.send('error-box', { message })
+  },
+  notification: (message) => {
+    ipcRenderer.send('show-notification', { message })
+  },
+  resizeToContent: () => {
+    let newHeight = document.body.scrollHeight + (window.outerHeight - window.innerHeight)
+    if (newHeight > window.screen.height * 0.85) {
+      newHeight = Math.ceil(window.screen.height * 0.85)
+      document.body.style.overflow = null
+    } else {
+      document.body.style.overflow = 'hidden'
+    }
+    ipcRenderer.send('resize-window', newHeight)
+  },
+  selectDirectory: async (defaultDirectory) => {
+    return await ipcRenderer.invoke('select-directory', { defaultDirectory })
+  },
+  selectFile: async (defaultFile) => {
+    return await ipcRenderer.invoke('select-file', defaultFile)
+  },
+  getTheFormData: (form) => {
+    const values = {}
+    Array.from(form.elements).forEach(element => {
+      if (element.name && !element.disabled && !(element.type === 'radio' && !element.checked)) {
+        const [namespace, name] = element.name.split('.')
+        if (namespace && name) {
+          if (!values[namespace]) values[namespace] = {}
+          values[namespace][name] = element.value
+        } else {
+          values[element.name] = element.value
+        }
+      }
+    })
+    return values
+  }
+})
 
-/**
- * Create tabs dom structure
- */
-window.createTabsElement = function () {
-  let container = document.createElement('div')
-  let containerButtons = document.createElement('div')
-  let containerContents = document.createElement('div')
-  container.className = 'tabs'
-  container.appendChild(containerButtons)
-  container.appendChild(containerContents)
-  containerButtons.className = 'tab-buttons'
-  containerContents.className = 'tab-contents'
+contextBridge.exposeInMainWorld('htmlElements', {
+  createTabsElement () {
+    const container = document.createElement('div')
+    const containerButtons = document.createElement('div')
+    const containerContents = document.createElement('div')
+    container.className = 'tabs'
+    containerButtons.className = 'tab-buttons'
+    containerContents.className = 'tab-contents'
+    container.appendChild(containerButtons)
+    container.appendChild(containerContents)
 
-  container.addTab = function (label, content) {
-    let tabsTabIndex = containerButtons.childNodes.length
-    let button = document.createElement('div')
-    button.tabsTabIndex = tabsTabIndex
-    button.className = 'tab-button' + (tabsTabIndex > 0 ? '' : ' active')
-    button.innerText = label
-    button.addEventListener('click', function () {
-      let thisTabsTabIndex = this.tabsTabIndex
-      containerButtons.childNodes.forEach(function (item) {
-        item.className = (item.tabsTabIndex === thisTabsTabIndex) ? 'tab-button active' : 'tab-button'
-      })
-      containerContents.childNodes.forEach(function (item) {
-        item.style.display = (item.tabsTabIndex === thisTabsTabIndex) ? null : 'none'
-      })
-      window.resizeToContent()
+    container.addTab = function (label, content) {
+      const tabsTabIndex = containerButtons.childNodes.length
+      const button = document.createElement('div')
+      button.tabsTabIndex = tabsTabIndex
+      button.className = `tab-button${tabsTabIndex > 0 ? '' : ' active'}`
+      button.innerText = label
+      button.onclick = function () {
+        containerButtons.childNodes.forEach((item, index) => {
+          item.className = index === tabsTabIndex ? 'tab-button active' : 'tab-button'
+        })
+        containerContents.childNodes.forEach((item, index) => {
+          item.style.display = index === tabsTabIndex ? '' : 'none'
+        })
+        window.electronAPI.resizeToContent()
+      }
+
+      const contentWrapper = document.createElement('div')
+      contentWrapper.tabsTabIndex = tabsTabIndex
+      contentWrapper.className = 'tab-content'
+      contentWrapper.style.display = tabsTabIndex > 0 ? 'none' : ''
+      contentWrapper.appendChild(content)
+
+      containerContents.appendChild(contentWrapper)
+      containerButtons.appendChild(button)
+    }
+
+    return container
+  },
+  createOptionsFields: function (optionFields, optionFieldsNamespace, optionValues) {
+    optionValues = optionValues || {}
+    const container = document.createDocumentFragment()
+
+    optionFields.forEach((fieldDefinition) => {
+      const optionField = this.createOptionField(
+        fieldDefinition,
+        optionFieldsNamespace,
+        optionValues.hasOwnProperty(fieldDefinition.Name) ? optionValues[fieldDefinition.Name] : null
+      )
+      container.appendChild(optionField)
     })
 
-    let contentWrapper = document.createElement('div')
-    contentWrapper.tabsTabIndex = tabsTabIndex
-    contentWrapper.className = 'tab-content'
-    if (tabsTabIndex > 0) {
-      contentWrapper.style.display = 'none'
+    return container
+  },
+  checkForRequiredRestart: () => {
+    ipcRenderer.send('check-require-restart')
+  },
+  createOptionField: (optionFieldDefinition, optionFieldNamespace, value) => {
+    if (value === undefined || value === null) {
+      value = optionFieldDefinition.Value
     }
 
-    contentWrapper.appendChild(content)
-    containerContents.appendChild(contentWrapper)
-    containerButtons.appendChild(button)
+    const row = document.createElement('div')
+    const th = document.createElement('div')
+    const td = document.createElement('div')
+    let inputField
+
+    switch (optionFieldDefinition.$Type) {
+      case 'text':
+        inputField = document.createElement('textarea')
+        break
+      case 'select':
+        inputField = document.createElement('select')
+        optionFieldDefinition.Examples.forEach((item) => {
+          const option = document.createElement('option')
+          option.value = item.Value
+          option.innerText = item.Label || item.Value
+          if (value === item.Value) option.selected = true
+          inputField.appendChild(option)
+        })
+        break
+      case 'boolean':
+        inputField = document.createElement('input')
+        inputField.type = 'checkbox'
+        inputField.checked = [true, 'true', 1, '1'].includes(value)
+        break
+      case 'numeric':
+        inputField = document.createElement('input')
+        inputField.type = 'number'
+        inputField.value = value
+        break
+      case 'password':
+        inputField = document.createElement('input')
+        inputField.type = 'password'
+        inputField.value = value
+        break
+      case 'directory':
+      case 'file':
+        inputField = document.createElement('input')
+        const browseButton = document.createElement('button')
+        browseButton.style.margin = '.3rem 0'
+        browseButton.innerText = 'Browse'
+        browseButton.addEventListener('click', function (event) {
+          event.preventDefault()
+          const method = optionFieldDefinition.$Type === 'directory' ? 'selectDirectory' : 'selectFile'
+          window.electronAPI[method](inputField.value).then(selectedPath => {
+            if (selectedPath) {
+              inputField.value = selectedPath[0] // Assuming the API returns an array
+            }
+          })
+        })
+        td.appendChild(browseButton)
+        break
+      default:
+        inputField = document.createElement('input')
+        break
+    }
+
+    row.className = 'row'
+    th.className = 'cell-left'
+    td.className = 'cell-right'
+    row.appendChild(th)
+    row.appendChild(td)
+
+    if (optionFieldDefinition.Provider) {
+      window.optionFieldDependencies.add({
+        rule: optionFieldDefinition.Provider,
+        row: row
+      })
+    }
+
+    if (optionFieldNamespace) {
+      inputField.name = optionFieldNamespace + '.' + optionFieldDefinition.Name
+    } else {
+      inputField.name = optionFieldDefinition.Name
+    }
+    inputField.id = 'field_' + optionFieldDefinition.Name
+    inputField.placeholder = optionFieldDefinition.Default || ''
+
+    td.appendChild(inputField)
+
+    if ('$Type' in optionFieldDefinition) {
+      if (optionFieldDefinition.$Type === 'boolean') {
+        inputField.type = 'checkbox'
+        inputField.value = 'true'
+      } else if (optionFieldDefinition.$Type === 'numeric') {
+        inputField.type = 'number'
+      } else if (optionFieldDefinition.$Type === 'password') {
+        inputField.type = 'password'
+      } else if (optionFieldDefinition.$Type === 'directory') {
+        const browseButton = document.createElement('button')
+        browseButton.style.margin = '.3rem 0'
+        browseButton.innerText = 'Browse'
+        browseButton.addEventListener('click', function (event) {
+          event.preventDefault()
+          window.electronAPI.selectDirectory(inputField.value, function (selectedDirectory) {
+            if (selectedDirectory) {
+              inputField.value = selectedDirectory[0]
+            }
+          })
+        })
+        inputField.parentNode.insertBefore(browseButton, inputField.nextSibling)
+      } else if (optionFieldDefinition.$Type === 'file') {
+        const browseButton = document.createElement('button')
+        browseButton.style.margin = '.3rem 0'
+        browseButton.innerText = 'Browse'
+        browseButton.addEventListener('click', function (event) {
+          event.preventDefault()
+          window.electronAPI.selectFile(inputField.value, function (selectedFile) {
+            if (selectedFile) {
+              inputField.value = selectedFile[0]
+            }
+          })
+        })
+        inputField.parentNode.insertBefore(browseButton, inputField.nextSibling)
+      } else if (optionFieldDefinition.$Type === 'select') {
+        optionFieldDefinition.Examples.forEach(function (item) {
+          const selectOption = document.createElement('option')
+          selectOption.value = item.Value
+          selectOption.innerText = item.Label || item.Value
+          if (value === item.Value) {
+            selectOption.selected = 'selected'
+          }
+          inputField.appendChild(selectOption)
+        })
+      }
+    }
+
+    // Set examples
+    if (optionFieldDefinition.Examples && optionFieldDefinition.$Type !== 'boolean' && optionFieldDefinition.$Type !== 'select') {
+      const inputFieldOptions = document.createElement('datalist')
+      inputFieldOptions.id = inputField.id + '_datalist'
+      inputField.setAttribute('list', inputFieldOptions.id)
+      td.appendChild(inputFieldOptions)
+      optionFieldDefinition.Examples.forEach(function (item) {
+        const datalistOption = document.createElement('option')
+        datalistOption.value = item.Value
+        datalistOption.innerText = item.Label || item.Value
+        inputFieldOptions.appendChild(datalistOption)
+      })
+
+      // Until Electron fixes the datalist, we are stuck with next solution.
+      inputField.addEventListener('click', function (event) {
+        const { width, height } = event.target.getBoundingClientRect()
+        if (event.offsetX < width - height) {
+          return
+        }
+        event.preventDefault()
+        const menuTemplate = []
+        inputFieldOptions.childNodes.forEach(function (childNode) {
+          if (childNode.value) {
+            menuTemplate.push({
+              label: childNode.value,
+              click: function () {
+                inputField.value = childNode.value
+                inputField.dispatchEvent(new window.Event('change'))
+              }
+            })
+          }
+        })
+        window.electronAPI.popupContextMenu(menuTemplate)
+      })
+    }
+
+    // Trigger provider's show/hide
+    inputField.addEventListener('change', function () {
+      window.optionFieldDependencies.select(this.value)
+    })
+    window.optionFieldDependencies.select(this.value)
+
+    // Flag that indicate app requires restart when form is saved.
+    if ('$RequireRestart' in optionFieldDefinition) {
+      inputField.addEventListener('change', function () {
+        window.requireRestart = true
+      }, { once: true })
+    }
+
+    // Setup field label.
+    th.innerText = optionFieldDefinition.$Label || optionFieldDefinition.Name
+
+    // Setup helping text.
+    // It's not very reliable to convert urls to links with pattern, but don't want to include some full bloated
+    // library just to show few links.
+    if ('Help' in optionFieldDefinition && optionFieldDefinition.Help) {
+      fieldHelpText.innerHTML = optionFieldDefinition.Help
+        .replace(/(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#/%?=~_|!:,.]*[-A-Z0-9+&@#/%=~_|])/ig, '<a target="_blank" href="$1">$1</a>')
+        .replace(/\n/g, '<br />')
+      td.appendChild(fieldHelpText)
+      if (optionFieldDefinition.$Type === 'boolean') {
+        fieldHelpText.className = 'label-help-inline'
+      } else {
+        fieldHelpText.className = 'label-help'
+      }
+    }
+
+    // Make some fields required.
+    if ('Required' in optionFieldDefinition && optionFieldDefinition.Required) {
+      row.className += ' required'
+      const requiredHelpText = document.createElement('div')
+      requiredHelpText.innerText = 'required'
+      requiredHelpText.className += ' label-required'
+      th.appendChild(requiredHelpText)
+    }
+
+    return row
   }
+})
 
-  return container
-}
-
-/**
- * @returns {{}}
- */
-window.optionFieldDepenencies = {
+contextBridge.exposeInMainWorld('optionFieldDependencies', {
   registry: [],
-
   add: function (item) {
     this.registry.push(item)
   },
-
   select: function (value) {
     this.registry.forEach(function (item) {
-      let invert = item.rule.substr(0, 1) === '!'
-      let rule = (invert ? item.rule.substr(1) : item.rule).split(',')
-      let match = rule.indexOf(value) > -1
+      const invert = item.rule.startsWith('!')
+      const rule = (invert ? item.rule.substring(1) : item.rule).split(',')
+      let match = rule.includes(value)
       match = invert ? !match : match
       if (match) {
-        item.row.style.display = null
+        item.row.style.display = ''
         item.row.querySelectorAll('input,textarea,select').forEach(function (input) {
-          input.disabled = null
+          input.disabled = false
         })
       } else {
         item.row.style.display = 'none'
         item.row.querySelectorAll('input,textarea,select').forEach(function (input) {
-          input.disabled = 'disabled'
+          input.disabled = true
         })
       }
     })
   }
-}
+})
 
-/**
-* Create new row
-* @param {{}} optionFieldDefinition
-* @param {string} optionFieldNamespace
-* @param {string} value
-* @returns {HTMLElement}
-*/
-window.createOptionField = function (optionFieldDefinition, optionFieldNamespace, value) {
-  if (value === undefined || value === null) {
-    value = optionFieldDefinition.Value
-  }
-
-  let row = document.createElement('div')
-  let th = document.createElement('div')
-  let td = document.createElement('div')
-
-  let inputField = document.createElement('input')
-  if ('$Type' in optionFieldDefinition && optionFieldDefinition.$Type === 'text') {
-    inputField = document.createElement('textarea')
-  } else if ('$Type' in optionFieldDefinition && optionFieldDefinition.$Type === 'select') {
-    inputField = document.createElement('select')
-  }
-
-  let fieldHelpText = document.createElement('div')
-  row.className = 'row'
-  th.className = 'cell-left'
-  td.className = 'cell-right'
-
-  // Setup row.
-  row.appendChild(th)
-  row.appendChild(td)
-
-  if (optionFieldDefinition.Provider) {
-    window.optionFieldDepenencies.add({
-      rule: optionFieldDefinition.Provider,
-      row: row
-    })
-  }
-
-  // Setup the input field.
-  if (optionFieldNamespace) {
-    inputField.name = optionFieldNamespace + '.' + optionFieldDefinition.Name
-  } else {
-    inputField.name = optionFieldDefinition.Name
-  }
-  inputField.id = 'field_' + optionFieldDefinition.Name
-  inputField.placeholder = optionFieldDefinition.Default || ''
-  inputField.value = ''
-
-  // Assign values.
-  if (optionFieldDefinition.$Type === 'boolean') {
-    if ([true, 1, 'true'].indexOf(value) > -1) {
-      inputField.checked = 'checked'
-    }
-  } else {
-    inputField.value = (value || '').toString()
-  }
-
-  td.appendChild(inputField)
-
-  if ('$Type' in optionFieldDefinition) {
-    if (optionFieldDefinition.$Type === 'boolean') {
-      inputField.type = 'checkbox'
-      inputField.value = 'true'
-    } else if (optionFieldDefinition.$Type === 'numeric') {
-      inputField.type = 'number'
-    } else if (optionFieldDefinition.$Type === 'password') {
-      inputField.type = 'password'
-    } else if (optionFieldDefinition.$Type === 'directory') {
-      let browseButton = document.createElement('button')
-      browseButton.style.margin = '.3rem 0'
-      browseButton.innerText = 'Browse'
-      browseButton.addEventListener('click', function (event) {
-        event.preventDefault()
-        window.selectDirectory(inputField.value, function (selectedDirectory) {
-          if (selectedDirectory) {
-            inputField.value = selectedDirectory[0]
-          }
-        })
+contextBridge.exposeInMainWorld('api', {
+  renderBookmarkSettings: (placeholderId, providerName, values) => {
+    // Send an IPC message to the main process to retrieve the provider data
+    ipcRenderer.once('provider-data-reply', (event, provider) => {
+      const connectionFields = provider.Options.filter((item) => {
+        return item.Name !== '_rclonetray_local_path_map' && item.Advanced !== true
       })
-      inputField.parentNode.insertBefore(browseButton, inputField.nextSibling)
-    } else if (optionFieldDefinition.$Type === 'file') {
-      let browseButton = document.createElement('button')
-      browseButton.style.margin = '.3rem 0'
-      browseButton.innerText = 'Browse'
-      browseButton.addEventListener('click', function (event) {
-        event.preventDefault()
-        window.selectFile(inputField.value, function (selectedFile) {
-          if (selectedFile) {
-            inputField.value = selectedFile[0]
-          }
-        })
-      })
-      inputField.parentNode.insertBefore(browseButton, inputField.nextSibling)
-    } else if (optionFieldDefinition.$Type === 'select') {
-      optionFieldDefinition.Examples.forEach(function (item) {
-        let selectOption = document.createElement('option')
-        selectOption.value = item.Value
-        selectOption.innerText = item.Label || item.Value
-        if (value === item.Value) {
-          selectOption.selected = 'selected'
-        }
-        inputField.appendChild(selectOption)
-      })
-    }
-  }
 
-  // Set examples
-  if (optionFieldDefinition.Examples && optionFieldDefinition.$Type !== 'boolean' && optionFieldDefinition.$Type !== 'select') {
-    let inputFieldOptions = document.createElement('datalist')
-    inputFieldOptions.id = inputField.id + '_datalist'
-    inputField.setAttribute('list', inputFieldOptions.id)
-    td.appendChild(inputFieldOptions)
-    optionFieldDefinition.Examples.forEach(function (item) {
-      let datalistOption = document.createElement('option')
-      datalistOption.value = item.Value
-      datalistOption.innerText = item.Label || item.Value
-      inputFieldOptions.appendChild(datalistOption)
-    })
+      const advancedFields = provider.Options.filter((item) => {
+        return item.Name !== '_rclonetray_local_path_map' && item.Advanced === true
+      })
 
-    // Until Electron fixes the datalist, we are stuck with next solution.
-    inputField.addEventListener('click', function (event) {
-      const { width, height } = event.target.getBoundingClientRect()
-      if (event.offsetX < width - height) {
-        return
+      const mappingFields = provider.Options.filter((item) => {
+        return item.Name === '_rclonetray_local_path_map'
+      })
+
+      // Asynchronously create the tabs element using a method exposed from another part of your contextBridge
+      const tabs = window.htmlElements.createTabsElement()
+
+      if (connectionFields.length) {
+        tabs.addTab('Connection', window.htmlElements.createOptionsFields(connectionFields, 'options', values.options))
       }
-      event.preventDefault()
-      let menuTemplate = []
-      inputFieldOptions.childNodes.forEach(function (childNode) {
-        if (childNode.value) {
-          menuTemplate.push({
-            label: childNode.value,
-            click: function () {
-              inputField.value = childNode.value
-              inputField.dispatchEvent(new window.Event('change'))
-            }
-          })
+
+      if (advancedFields.length) {
+        tabs.addTab('Advanced', window.htmlElements.createOptionsFields(advancedFields, 'options', values.options))
+      }
+
+      ipcRenderer.invoke('get-setting', 'rclone_sync_enable').then((syncEnable) => {
+        if (syncEnable && mappingFields.length) {
+          tabs.addTab('Mappings', window.htmlElements.createOptionsFields(mappingFields, 'options', values.options))
         }
+
+        const placeholder = document.getElementById(placeholderId)
+        const range = document.createRange()
+        range.selectNodeContents(placeholder)
+        range.deleteContents()
+        placeholder.appendChild(tabs)
       })
-      window.popupContextMenu(menuTemplate)
     })
+
+    ipcRenderer.send('get-provider-data', providerName)
   }
-
-  // Trigger provider's show/hide
-  inputField.addEventListener('change', function () {
-    window.optionFieldDepenencies.select(this.value)
-  })
-  window.optionFieldDepenencies.select(this.value)
-
-  // Flag that indicate app requires restart when form is saved.
-  if ('$RequireRestart' in optionFieldDefinition) {
-    inputField.addEventListener('change', function () {
-      window.requireRestart = true
-    }, { once: true })
-  }
-
-  // Setup field label.
-  th.innerText = optionFieldDefinition.$Label || optionFieldDefinition.Name
-
-  // Setup helping text.
-  // It's not very reliable to convert urls to links with pattern, but don't want to include some full bloated
-  // library just to show few links.
-  if ('Help' in optionFieldDefinition && optionFieldDefinition.Help) {
-    fieldHelpText.innerHTML = optionFieldDefinition.Help
-      .replace(/(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#/%?=~_|!:,.;]*[-A-Z0-9+&@#/%=~_|])/ig, '<a target="_blank" href="$1">$1</a>')
-      .replace(/\n/g, '<br />')
-    td.appendChild(fieldHelpText)
-    if (optionFieldDefinition.$Type === 'boolean') {
-      fieldHelpText.className = 'label-help-inline'
-    } else {
-      fieldHelpText.className = 'label-help'
-    }
-  }
-
-  // Make some fields required.
-  if ('Required' in optionFieldDefinition && optionFieldDefinition.Required) {
-    row.className += ' required'
-    let requiredHelpText = document.createElement('div')
-    requiredHelpText.innerText = 'required'
-    requiredHelpText.className += ' label-required'
-    th.appendChild(requiredHelpText)
-  }
-
-  return row
-}
-
-/**
- * Check if need to restart
- */
-window.checkForRequiredRestart = function () {
-  if (window.requireRestart) {
-    let choice = remoteElectron.dialog.showMessageBox(remote.getCurrentWindow(), {
-      type: 'warning',
-      buttons: ['Restart', 'Ignore'],
-      title: 'Restart is required',
-      message: 'You have changed an setting that requires restart to take effect.'
-    })
-    if (choice === 0) {
-      remote.app.relaunch()
-      remote.app.quit()
-    }
-  }
-}
-
-/**
- * Construct option fields by definition array
- * @returns {DocumentFragment}
- */
-window.createOptionsFields = function (optionFields, optionFieldsNamespace, optionValues) {
-  optionValues = optionValues || {}
-  let container = document.createDocumentFragment()
-  optionFields.forEach(function (fieldDefinition) {
-    container.appendChild(
-      window.createOptionField(
-        fieldDefinition,
-        optionFieldsNamespace,
-        optionValues.hasOwnProperty(fieldDefinition.Name) ? optionValues[fieldDefinition.Name] : null
-      ))
-  })
-  return container
-}
-
-/**
- * Render bookmark settings
- * @TODO refactor
- */
-window.renderBookmarkSettings = function (placeholder, providerName, values) {
-  let provider = window.$main.rclone.getProvider(providerName)
-  values = values || {}
-
-  let connectionFields = provider.Options.filter(function (item) {
-    return item.Name !== '_rclonetray_local_path_map' && item.Advanced !== true
-  })
-
-  let advancedFields = provider.Options.filter(function (item) {
-    return item.Name !== '_rclonetray_local_path_map' && item.Advanced === true
-  })
-
-  let mappingFields = provider.Options.filter(function (item) {
-    return item.Name === '_rclonetray_local_path_map'
-  })
-
-  let tabs = window.createTabsElement()
-
-  if (connectionFields.length) {
-    tabs.addTab('Connection', window.createOptionsFields(connectionFields, 'options', values.options))
-  }
-
-  if (advancedFields.length) {
-    tabs.addTab('Advanced', window.createOptionsFields(advancedFields, 'options', values.options))
-  }
-
-  if (window.$main.settings.get('rclone_sync_enable')) {
-    if (mappingFields.length) {
-      tabs.addTab('Mappings', window.createOptionsFields(mappingFields, 'options', values.options))
-    }
-  }
-
-  let range = document.createRange()
-  range.selectNodeContents(placeholder)
-  range.deleteContents()
-  placeholder.appendChild(tabs)
-}
+})

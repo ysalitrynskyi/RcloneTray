@@ -7,10 +7,10 @@
       $main.loadStyles()
 
       document.addEventListener('DOMContentLoaded', function () {
-        let tabs = createTabsElement()
+        let tabs = window.htmlElements.createTabsElement()
         document.getElementById('preferences').appendChild(tabs)
 
-        tabs.addTab('General', createOptionsFields([
+        tabs.addTab('General', window.htmlElements.createOptionsFields([
           {
             $Label: 'Auto launch',
             $Type: 'boolean',
@@ -33,7 +33,7 @@
             Help: '',
             Provider: '',
             Default: true,
-            Value: $main.settings.get('tray_menu_show_type'),
+            Value: $main.getSetting('tray_menu_show_type'),
             ShortOpt: '',
             Hide: 0,
             Required: false,
@@ -43,7 +43,7 @@
           }
         ]))
 
-        tabs.addTab('Rclone', createOptionsFields([
+        tabs.addTab('Rclone', window.htmlElements.createOptionsFields([
           {
             Name: 'rclone_config',
             $Label: 'Config',
@@ -68,7 +68,7 @@
             Help: 'Use the Rclone binary that is bundled with the app, otherwise installed system wide version will be used (if not found, then you will receive and error).',
             Provider: '',
             Default: true,
-            Value: $main.settings.get('rclone_use_bundled'),
+            Value: $main.getSetting('rclone_use_bundled'),
             ShortOpt: '',
             Hide: 0,
             Required: false,
@@ -81,21 +81,21 @@
             $Label: 'File cache time',
             $Type: 'numeric',
             Help: 'In seconds',
-            Value: $main.settings.get('rclone_cache_files')
+            Value: $main.getSetting('rclone_cache_files')
           },
           {
             Name: 'rclone_cache_directories',
             $Label: 'Directory cache time',
             $Type: 'numeric',
             Help: 'In seconds',
-            Value: $main.settings.get('rclone_cache_directories')
+            Value: $main.getSetting('rclone_cache_directories')
           },
           {
             Name: 'custom_args',
             $Label: 'Custom Rclone setting args.',
             $Type: 'text',
             Help: 'Space or new-line separated rclone command arguments to be appended to all commands.\nCheck more at https://rclone.org/docs/',
-            Value: $main.settings.get('custom_args'),
+            Value: $main.getSetting('custom_args'),
             ShortOpt: '',
             Hide: 0,
             Required: false,
@@ -105,21 +105,21 @@
           }
         ]))
 
-        tabs.addTab('NCDU', createOptionsFields([
+        tabs.addTab('NCDU', window.htmlElements.createOptionsFields([
           {
             $Label: 'Enable',
             $Type: 'boolean',
             Name: 'rclone_ncdu_enable',
-            Value: $main.settings.get('rclone_ncdu_enable')
+            Value: $main.getSetting('rclone_ncdu_enable')
           }
         ]))
 
-        tabs.addTab('Upload/Download', createOptionsFields([
+        tabs.addTab('Upload/Download', window.htmlElements.createOptionsFields([
           {
             $Label: 'Enable',
             $Type: 'boolean',
             Name: 'rclone_sync_enable',
-            Value: $main.settings.get('rclone_sync_enable')
+            Value: $main.getSetting('rclone_sync_enable')
           },
           {
             $Label: 'Automatic Upload',
@@ -151,55 +151,55 @@
                 Value: 15
               }
             ],
-            Value: $main.settings.get('rclone_sync_autoupload_delay'),
+            Value: $main.getSetting('rclone_sync_autoupload_delay'),
             $RequireRestart: true,
             Help: 'Need restart to take effect.'
           }
         ]))
 
-        tabs.addTab('Serving', createOptionsFields([
+        tabs.addTab('Serving', window.htmlElements.createOptionsFields([
           {
             $Label: 'Enable HTTP',
             $Type: 'boolean',
             Name: 'rclone_serving_http_enable',
-            Value: $main.settings.get('rclone_serving_http_enable')
+            Value: $main.getSetting('rclone_serving_http_enable')
           },
           {
             $Label: 'Enable FTP',
             $Type: 'boolean',
             Name: 'rclone_serving_ftp_enable',
-            Value: $main.settings.get('rclone_serving_ftp_enable')
+            Value: $main.getSetting('rclone_serving_ftp_enable')
           },
           {
             $Label: 'Enable Restic',
             $Type: 'boolean',
             Name: 'rclone_serving_restic_enable',
-            Value: $main.settings.get('rclone_serving_restic_enable')
+            Value: $main.getSetting('rclone_serving_restic_enable')
           },
           {
             $Label: 'Enable WebDAV',
             $Type: 'boolean',
             Name: 'rclone_serving_webdav_enable',
-            Value: $main.settings.get('rclone_serving_webdav_enable')
+            Value: $main.getSetting('rclone_serving_webdav_enable')
           },
           {
             $Label: 'Default username',
             $Type: 'string',
             Name: 'rclone_serving_username',
-            Value: $main.settings.get('rclone_serving_username')
+            Value: $main.getSetting('rclone_serving_username')
           },
           {
             $Label: 'Default password',
             $Type: 'password',
             Name: 'rclone_serving_password',
-            Value: $main.settings.get('rclone_serving_password')
+            Value: $main.getSetting('rclone_serving_password')
           }
         ]))
 
         let theForm = document.getElementById('the-form')
         theForm.addEventListener('submit', function (event) {
           event.preventDefault();
-          let data = getTheFormData(this)
+          let data = window.electronAPI.getTheFormData(this)
 
           let oldAutoStart = $main.isAutostart()
           if (oldAutoStart !== !!(data.auto_start || false)) {
@@ -207,7 +207,7 @@
           }
           delete data['auto_start']
 
-          $main.settings.merge(data)
+          $main.settingsMerge(data)
           $main.refreshTray()
           window.checkForRequiredRestart()
           window.close()

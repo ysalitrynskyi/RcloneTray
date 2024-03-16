@@ -10,7 +10,7 @@
       document.addEventListener('DOMContentLoaded', function () {
 
         let opts = window.$main.getProps();
-        renderBookmarkSettings(
+        window.api.renderBookmarkSettings(
           document.getElementById('bookmark-settings'),
           window.$main.getProps().type,
           {
@@ -21,20 +21,20 @@
         document.getElementById('the-form')
           .addEventListener('submit', function (event) {
             event.preventDefault()
-            let data = getTheFormData(this)
+            let data = window.electronAPI.getTheFormData(this)
             $main.rclone
               .updateBookmark($main.getProps().$name, data.options)
               .then(window.close)
-              .catch(errorBox)
+              .catch(window.electronAPI.errorBox)
           })
 
         document.getElementById('delete-bookmark-button')
           .addEventListener('click', function (event) {
             event.preventDefault()
-            if (confirm('Are you sure you want to delete the bookmark?')) {
-              $main.rclone.deleteBookmark($main.getProps().$name)
+            if (window.electronAPI.confirm('Are you sure you want to delete the bookmark?')) {
+              $main.rclone.delBookmark($main.getProps().$name)
                 .then(window.close)
-                .catch(window.errorBox)
+                .catch(window.electronAPI.errorBox)
             }
           })
 

@@ -1,7 +1,7 @@
 'use strict'
 
 const path = require('path')
-const fs = require('fs')
+const fs = require('fs').promises
 const { app } = require('electron')
 
 /**
@@ -79,7 +79,7 @@ const remove = function (item) {
 
 /**
  * Merge current settings
- * @param {{}} settingsObject
+ * @param settings
  */
 const merge = function (settings) {
   Object.keys(settings).forEach(function (key) {
@@ -97,50 +97,37 @@ const getAll = function () {
 }
 
 /**
- * Update the settings file.
+ * Update the settings file asynchronously.
  */
-const updateFile = function () {
+const updateFile = async function () {
   try {
-    let jsonContent = JSON.stringify(cache)
-    fs.writeFileSync(settingsFile, jsonContent)
+    const jsonContent = JSON.stringify(cache)
+    await fs.writeFile(settingsFile, jsonContent)
   } catch (err) {
-    console.error('Settings', err)
+    console.error('Error updating settings file:', err)
   }
 }
 
 /**
- * Read the settings file and init the settings cache.
+ * Read the settings file and initialize the settings cache asynchronously.
  */
-const readFile = function () {
-  // Create the directory if not exists yet.
-  if (!fs.existsSync(app.getPath('userData'))) {
-    fs.mkdirSync(app.getPath('userData'))
-  }
+const readFile = async function () {
+  try {
+    // Create the directory if not exists yet.
+    await fs.mkdir(app.getPath('userData'), { recursive: true })
 
-  // Initialize settings cache.
-  if (fs.existsSync(settingsFile)) {
-    try {
-      let settings = JSON.parse(fs.readFileSync(settingsFile))
-      Object.keys(settings).forEach(function (key) {
-        cache[key] = settings[key]
-      })
-    } catch (err) {
-      console.error('Settings', err)
+    // Check if the settings file exists before reading
+    const fileExists = await fs.stat(settingsFile).catch(() => false)
+    if (fileExists) {
+      const settings = JSON.parse(await fs.readFile(settingsFile))
+      Object.assign(cache, settings)
     }
+  } catch (err) {
+    console.error('Error reading settings file:', err)
   }
 }
 
-// Read the settings file and init the settings cache.
+// Initialize settings cache by reading the settings file.
 readFile()
 
-// Exports.
-// Because next keywords are very common and delete has an collision,
-// should pick more odd names or do some longnames.
-module.exports = {
-  set,
-  get,
-  has,
-  getAll,
-  remove,
-  merge
-}
+module.exports = { set, get, has, getAll, remove, merge }
