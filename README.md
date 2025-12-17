@@ -1,51 +1,42 @@
 # <img src="https://raw.githubusercontent.com/ysalitrynskyi/RcloneTray/master/src/ui/icons/source-icon-color.png" width="48px" align="center" alt="RcloneTray Icon" /> RcloneTray
 
-![GitHub release](https://img.shields.io/github/release/ysalitrynskyi/RcloneTray.svg)
-![CI](https://github.com/ysalitrynskyi/RcloneTray/workflows/CI/badge.svg)
+[![GitHub release](https://img.shields.io/github/release/ysalitrynskyi/RcloneTray.svg)](https://github.com/ysalitrynskyi/RcloneTray/releases)
+[![CI](https://github.com/ysalitrynskyi/RcloneTray/workflows/CI/badge.svg)](https://github.com/ysalitrynskyi/RcloneTray/actions)
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/ysalitrynskyi?style=social)](https://github.com/sponsors/ysalitrynskyi)
 
 RcloneTray is a simple cross-platform GUI for [Rclone](https://rclone.org/) and is intended to provide a free alternative to [Mountain Duck](https://mountainduck.io/).
 
 ![Screenshot](https://raw.githubusercontent.com/ysalitrynskyi/RcloneTray/master/screenshot.png)
 
-
-## Features
+## ✨ Features
 
 - 🗂️ **Mount remote storage** as local drives
 - 🔄 **Sync files** between local and remote (upload/download)
 - 📡 **Serve remotes** via HTTP, FTP, WebDAV, or Restic
-- 🔐 **Secure** - context isolation enabled, no remote module
+- 🔐 **Secure** - context isolation enabled, sandboxed renderer
 - 💾 **Bundled Rclone** - works out of the box, no installation required
 - 🖥️ **Cross-platform** - Windows, macOS, and Linux
+- 🌙 **Dark mode** - automatic light/dark theme support
 
 
-## Changelog
+## 📦 Installation
 
-### v1.2.0 (Latest)
-- **Migrated to TypeScript** with strict type checking
-- **Fixed IPC communication** - all dialogs now work properly
-- **Fixed Preferences dialog** - settings load and save correctly
-- **Fixed Add/Edit Bookmark dialogs** - async operations handled correctly
-- **Modernized Electron APIs** - replaced deprecated APIs
-- **Security hardening** - removed enableRemoteModule, proper context isolation
-- **Fixed rclone command handling** - custom args filtering, stderr parsing
-- **Implemented serving authentication** - username/password support for serve commands
-- **Honors autoupload delay setting** - respects configured delay instead of hardcoded value
-- **Added comprehensive test suite** - unit tests, integration tests, E2E smoke tests
-- **Added CI pipeline** - GitHub Actions for lint, typecheck, tests, and builds
+### Download
 
-### v1.1.0
-- Updated npm packages
-- Fixed "WebDAV" and "Restic" on macOS
-- Updated rclone for all systems and added support for ARM64
-- Updated update-rclone-binaries.sh to download binaries for all supported architectures
-- Fixed tray icon size on macOS
-- Fixed uncaughtException() to quit the app on button click
-- Fixed popup focus on macOS
-- Updated app icon
-- Changed About dialog
+[**Download the latest release**](https://github.com/ysalitrynskyi/RcloneTray/releases) for your platform:
+
+| Platform | Architecture | Download |
+|----------|-------------|----------|
+| Windows | x64, arm64 | `.exe` installer |
+| macOS | Intel & Apple Silicon | `.dmg` |
+| Linux | x64 | `.AppImage`, `.deb` |
+
+### Build from Source
+
+See the [Development](#-development) section below.
 
 
-## Requirements
+## 🖥️ Requirements
 
 ### Supported Operating Systems
 - Windows 7/8/10/11 (x64, arm64)
@@ -53,49 +44,61 @@ RcloneTray is a simple cross-platform GUI for [Rclone](https://rclone.org/) and 
 - GNU/Linux (x64), DE with tray icons support
 
 ### Mount Support
-To get the mount function working, you need to install extra packages (alternatively you can mount using WebDAV):
-- **Windows** - [WinFsp](http://www.secfs.net/winfsp/download/)
-- **macOS** - [macFUSE](https://osxfuse.github.io/)
-- **Linux** - fuse (`sudo apt install fuse` on Debian/Ubuntu)
+
+To use the mount feature, install the appropriate FUSE driver:
+
+| OS | Required Package |
+|----|-----------------|
+| **Windows** | [WinFsp](http://www.secfs.net/winfsp/download/) |
+| **macOS** | [macFUSE](https://osxfuse.github.io/) |
+| **Linux** | `fuse` (`sudo apt install fuse` on Debian/Ubuntu) |
+
+> 💡 **Tip:** As an alternative to mounting, you can use the WebDAV serve feature.
 
 
-## Installation
-
-### Download
-[Download the latest release](https://github.com/ysalitrynskyi/RcloneTray/releases) for your platform.
-
-### Build from Source
-See the [Development](#development) section below.
-
-
-## Usage
+## 🚀 Usage
 
 1. **Launch RcloneTray** - the app starts in your system tray
 2. **Create a bookmark** - click "New Bookmark" from the tray menu
-3. **Select a provider** - choose your cloud storage provider (S3, Google Drive, Dropbox, etc.)
+3. **Select a provider** - choose your cloud storage (S3, Google Drive, Dropbox, etc.)
 4. **Configure** - enter your credentials and settings
 5. **Use** - mount, sync, or serve your remote storage from the tray menu
 
 
-## FAQ
+## ❓ FAQ
 
-**Q: The application bundle comes with Rclone version XXX, but I want to use version YYY installed on my system**
+<details>
+<summary><b>How do I use my own Rclone installation?</b></summary>
 
-A: Go to "Preferences" and from the "Rclone" tab, uncheck the option "Use bundled Rclone".
+Go to **Preferences** → **Rclone** tab → uncheck **"Use bundled Rclone"**.
+</details>
 
-**Q: How do I add authentication to the serving feature?**
+<details>
+<summary><b>How do I add authentication to serving?</b></summary>
 
-A: Go to "Preferences" → "Serving" tab and enter your desired username and password. These credentials will be used for all serve commands.
+Go to **Preferences** → **Serving** tab and enter your username and password.
+</details>
 
-**Q: Why can't I mount my remote?**
+<details>
+<summary><b>Why can't I mount my remote?</b></summary>
 
-A: Make sure you have the required FUSE driver installed for your OS (see [Requirements](#mount-support)).
+Make sure you have the required FUSE driver installed for your OS. See [Requirements](#mount-support).
+</details>
+
+<details>
+<summary><b>Where is the config file stored?</b></summary>
+
+RcloneTray uses the default Rclone config location:
+- **Windows:** `%APPDATA%\rclone\rclone.conf`
+- **macOS:** `~/.config/rclone/rclone.conf`
+- **Linux:** `~/.config/rclone/rclone.conf`
+</details>
 
 
-## Development
+## 🛠️ Development
 
 ### Prerequisites
-- [Node.js](https://nodejs.org) (v20 or later recommended)
+- [Node.js](https://nodejs.org) v20 or later
 - npm
 
 ### Setup
@@ -106,21 +109,16 @@ cd RcloneTray
 npm install
 ```
 
-### Available Scripts
+### Scripts
 
 | Script | Description |
 |--------|-------------|
-| `npm run build` | Compile TypeScript to JavaScript |
-| `npm run build:watch` | Compile TypeScript in watch mode |
-| `npm run typecheck` | Run TypeScript type checking |
-| `npm run typecheck:watch` | Run TypeScript type checking in watch mode |
 | `npm start` | Build and start the app |
-| `npm run dev` | Build and start the app (alias for start) |
+| `npm run build` | Compile TypeScript |
+| `npm run typecheck` | Run type checking |
 | `npm run lint` | Run ESLint |
 | `npm run test` | Run unit and integration tests |
-| `npm run test:watch` | Run tests in watch mode |
-| `npm run test:e2e` | Run Playwright E2E tests |
-| `npm run pack` | Create unpacked build |
+| `npm run test:e2e` | Run E2E tests |
 | `npm run dist` | Create distribution packages |
 
 ### Project Structure
@@ -133,64 +131,48 @@ RcloneTray/
 │   ├── rclone.ts          # Rclone integration
 │   ├── settings.ts        # Settings management
 │   ├── dialogs.ts         # Dialog window management
-│   ├── dialogs-preload.ts # Preload script for renderer
+│   ├── dialogs-preload.ts # Preload script (context bridge)
 │   ├── types.ts           # Shared TypeScript types
-│   └── ui/                # UI assets
-│       ├── dialogs/       # HTML dialog files
-│       ├── icons/         # Application icons
-│       └── styles/        # CSS stylesheets
-├── dist/                   # Compiled JavaScript (generated)
+│   └── ui/                # UI assets (HTML, CSS, icons)
+├── dist/                   # Compiled JavaScript
 ├── tests/                  # Test files
-│   ├── unit/              # Unit tests
-│   ├── integration/       # Integration tests
-│   └── e2e/               # E2E tests
-├── rclone/                # Bundled rclone binaries (generated)
-├── tsconfig.json          # TypeScript configuration
-├── vitest.config.ts       # Vitest configuration
-└── playwright.config.ts   # Playwright configuration
-```
-
-### Architecture
-
-RcloneTray is an Electron application with:
-- **Main Process** (`main.ts`): Handles app lifecycle, IPC, and system integration
-- **Tray Module** (`tray.ts`): Manages system tray icon and menu
-- **Rclone Module** (`rclone.ts`): Wraps rclone commands and manages processes
-- **Settings Module** (`settings.ts`): Persists user preferences
-- **Dialogs Module** (`dialogs.ts`): Creates BrowserWindow dialogs
-- **Preload Script** (`dialogs-preload.ts`): Bridges main and renderer processes securely
-
-### IPC Communication
-
-The app uses Electron's IPC for communication between main and renderer processes:
-- `ipcMain.handle()` for request/response patterns (use `ipcRenderer.invoke()`)
-- `ipcMain.on()` for fire-and-forget events (use `ipcRenderer.send()`)
-
-### Testing
-
-```bash
-# Run all tests
-npm run test
-
-# Run tests in watch mode
-npm run test:watch
-
-# Run E2E smoke tests
-npm run test:e2e
+└── rclone/                 # Bundled rclone binaries
 ```
 
 ### Building for Distribution
 
 ```bash
-# Create packages for current platform
+# Current platform
 npm run dist
 
-# Create packages for all platforms (requires appropriate build environment)
+# All platforms (requires appropriate build environment)
 npm run publish
 ```
 
 
-## Contributing
+## 📋 Changelog
+
+### v1.2.0 (Latest)
+- **Redesigned Preferences UI** - modern sidebar navigation with light/dark mode
+- **Migrated to TypeScript** with strict type checking
+- **Fixed all dialog issues** - Preferences, Add/Edit Bookmark now work correctly
+- **Modernized Electron APIs** - proper context isolation, no deprecated APIs
+- **Security hardening** - sandboxed renderer, removed enableRemoteModule
+- **Serving authentication** - username/password support for serve commands
+- **Comprehensive test suite** - unit, integration, and E2E tests
+- **CI pipeline** - GitHub Actions for automated testing and builds
+
+### v1.1.0
+- Updated npm packages
+- Fixed WebDAV and Restic on macOS
+- Updated rclone binaries (ARM64 support)
+- Fixed tray icon and popup focus on macOS
+- Updated app icon and About dialog
+
+See [CHANGELOG.md](CHANGELOG.md) for full history.
+
+
+## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
@@ -202,12 +184,22 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 6. Open a Pull Request
 
 
-## License
+## ❤️ Support
 
-This project is licensed under the [MIT License](https://github.com/ysalitrynskyi/RcloneTray/blob/master/LICENSE.txt).
+If you find RcloneTray useful, consider supporting its development:
+
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?logo=github)](https://github.com/sponsors/ysalitrynskyi)
+
+Your sponsorship helps maintain and improve RcloneTray!
 
 
-## Credits
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE.txt).
+
+
+## 🙏 Credits
 
 - Original [RcloneTray](https://github.com/dimitrov-adrian/RcloneTray) by Adrian Dimitrov
 - [Rclone](https://rclone.org/) by Nick Craig-Wood
+- Built with [Electron](https://www.electronjs.org/)
