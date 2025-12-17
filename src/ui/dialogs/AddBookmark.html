@@ -8,10 +8,10 @@
       /**
        * Add available providers as options to select HTML element
        * @param {HTMLSelectElement} selectElement
+       * @param {Object} providers
        */
-      window.renderAvailableProvidersSelectOptions = function (selectElement) {
+      window.renderAvailableProvidersSelectOptions = function (selectElement, providers) {
         let optionsContainer = document.createDocumentFragment()
-        let providers = window.$main.rclone.providers()
         let emptyOption = document.createElement('option')
         emptyOption.value = ''
         emptyOption.innerHTML = '&mdash; Select Provider &mdash;'
@@ -31,15 +31,17 @@
         selectElement.appendChild(optionsContainer)
       }
 
-      document.addEventListener('DOMContentLoaded', function () {
-
+      document.addEventListener('DOMContentLoaded', async function () {
         const theForm = document.getElementById('the-form')
         const providerSettingsWrapper = document.getElementById('provider-settings-wrapper')
         const bookmarkSettingsWrapper = document.getElementById('bookmark-settings')
 
-        const providersListSelect = document.getElementById('providers-list');
+        // Fetch providers asynchronously
+        const providers = await $main.rclone.providers()
+
+        const providersListSelect = document.getElementById('providers-list')
         providersListSelect.addEventListener('change', function () {
-          if (this.selectedOptions.length > 0 && this.selectedOptions[0].hasOwnProperty('providerObject')) {
+          if (this.selectedOptions.length > 0 && this.selectedOptions[0].providerObject) {
             let provider = this.selectedOptions[0].providerObject
             document.title = `Create new ${provider.Name} Bookmark (${provider.Description})`
             window.api.renderBookmarkSettings(bookmarkSettingsWrapper, this.value)
@@ -51,17 +53,21 @@
           }
           window.electronAPI.resizeToContent()
         })
-        providersListSelect.dispatchEvent(new Event('change'))
-        renderAvailableProvidersSelectOptions(providersListSelect)
 
-        theForm.addEventListener('submit', function (event) {
-          event.preventDefault();
+        renderAvailableProvidersSelectOptions(providersListSelect, providers)
+        providersListSelect.dispatchEvent(new Event('change'))
+
+        theForm.addEventListener('submit', async function (event) {
+          event.preventDefault()
 
           let data = window.electronAPI.getTheFormData(this)
 
-          $main.rclone.addBookmark(data.type, data.name, data.options)
-            .then(window.close)
-            .catch(window.electronAPI.errorBox)
+          try {
+            await $main.rclone.addBookmark(data.type, data.name, data.options)
+            window.close()
+          } catch (error) {
+            window.electronAPI.errorBox(error.message || error)
+          }
         })
       });
     </script>

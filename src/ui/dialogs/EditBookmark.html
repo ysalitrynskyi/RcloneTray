@@ -5,39 +5,53 @@
 
     <script>
       $main.loadStyles()
-      document.title = `Edit ${$main.getProps().$name}`
 
-      document.addEventListener('DOMContentLoaded', function () {
+      // Initialize the page once DOM is ready
+      document.addEventListener('DOMContentLoaded', async function () {
+        // Fetch props asynchronously
+        const props = await $main.getProps()
 
-        let opts = window.$main.getProps();
+        // Update title and static fields
+        document.title = `Edit ${props.$name}`
+        document.getElementById('bookmark-type').textContent = props.type
+        document.getElementById('bookmark-name').textContent = props.$name
+
+        // Render bookmark settings
         window.api.renderBookmarkSettings(
           document.getElementById('bookmark-settings'),
-          window.$main.getProps().type,
+          props.type,
           {
-            options: opts,
+            options: props,
           }
         )
 
+        // Handle form submission
         document.getElementById('the-form')
-          .addEventListener('submit', function (event) {
+          .addEventListener('submit', async function (event) {
             event.preventDefault()
             let data = window.electronAPI.getTheFormData(this)
-            $main.rclone
-              .updateBookmark($main.getProps().$name, data.options)
-              .then(window.close)
-              .catch(window.electronAPI.errorBox)
-          })
-
-        document.getElementById('delete-bookmark-button')
-          .addEventListener('click', function (event) {
-            event.preventDefault()
-            if (window.electronAPI.confirm('Are you sure you want to delete the bookmark?')) {
-              $main.rclone.delBookmark($main.getProps().$name)
-                .then(window.close)
-                .catch(window.electronAPI.errorBox)
+            try {
+              await $main.rclone.updateBookmark(props.$name, data.options)
+              window.close()
+            } catch (error) {
+              window.electronAPI.errorBox(error.message || error)
             }
           })
 
+        // Handle delete button
+        document.getElementById('delete-bookmark-button')
+          .addEventListener('click', async function (event) {
+            event.preventDefault()
+            const confirmed = await window.electronAPI.confirm('Are you sure you want to delete the bookmark?')
+            if (confirmed) {
+              try {
+                await $main.rclone.delBookmark(props.$name)
+                window.close()
+              } catch (error) {
+                window.electronAPI.errorBox(error.message || error)
+              }
+            }
+          })
       })
     </script>
 
@@ -52,9 +66,7 @@
           Type
         </div>
         <div class="cell-right">
-          <var>
-            <script>document.write($main.getProps().type)</script>
-          </var>
+          <var id="bookmark-type"></var>
         </div>
       </div>
 
@@ -63,9 +75,7 @@
           Name
         </div>
         <div class="cell-right">
-          <var>
-            <script>document.write($main.getProps().$name)</script>
-          </var>
+          <var id="bookmark-name"></var>
         </div>
       </div>
 

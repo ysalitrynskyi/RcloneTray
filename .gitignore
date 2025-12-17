@@ -8,3 +8,11 @@ node_modules
 dist
 bin/*
 rclone/*
+
+# Test outputs
+coverage/
+playwright-report/
+test-results/
+
+# Build artifacts
+*.tsbuildinfo

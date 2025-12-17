@@ -6,7 +6,44 @@
     <script defer>
       $main.loadStyles()
 
-      document.addEventListener('DOMContentLoaded', function () {
+      document.addEventListener('DOMContentLoaded', async function () {
+        // Fetch all settings asynchronously
+        const [
+          isAutostart,
+          trayMenuShowType,
+          rcloneConfigFile,
+          rcloneUseBundled,
+          rcloneCacheFiles,
+          rcloneCacheDirectories,
+          customArgs,
+          rcloneNcduEnable,
+          rcloneSyncEnable,
+          rcloneSyncAutouploadDelay,
+          rcloneServingHttpEnable,
+          rcloneServingFtpEnable,
+          rcloneServingResticEnable,
+          rcloneServingWebdavEnable,
+          rcloneServingUsername,
+          rcloneServingPassword
+        ] = await Promise.all([
+          $main.isAutostart(),
+          $main.getSetting('tray_menu_show_type'),
+          $main.rclone.getConfigFile(),
+          $main.getSetting('rclone_use_bundled'),
+          $main.getSetting('rclone_cache_files'),
+          $main.getSetting('rclone_cache_directories'),
+          $main.getSetting('custom_args'),
+          $main.getSetting('rclone_ncdu_enable'),
+          $main.getSetting('rclone_sync_enable'),
+          $main.getSetting('rclone_sync_autoupload_delay'),
+          $main.getSetting('rclone_serving_http_enable'),
+          $main.getSetting('rclone_serving_ftp_enable'),
+          $main.getSetting('rclone_serving_restic_enable'),
+          $main.getSetting('rclone_serving_webdav_enable'),
+          $main.getSetting('rclone_serving_username'),
+          $main.getSetting('rclone_serving_password')
+        ])
+
         let tabs = window.htmlElements.createTabsElement()
         document.getElementById('preferences').appendChild(tabs)
 
@@ -18,7 +55,7 @@
             Help: 'Automatically launch the app during user login',
             Provider: '',
             Default: false,
-            Value: $main.isAutostart(),
+            Value: isAutostart,
             ShortOpt: '',
             Hide: 0,
             Required: false,
@@ -33,7 +70,7 @@
             Help: '',
             Provider: '',
             Default: true,
-            Value: $main.getSetting('tray_menu_show_type'),
+            Value: trayMenuShowType,
             ShortOpt: '',
             Hide: 0,
             Required: false,
@@ -51,7 +88,7 @@
             $RequireRestart: true,
             Help: 'Changing this option require restart.',
             Provider: '',
-            Default: $main.rclone.getConfigFile(),
+            Default: rcloneConfigFile,
             Value: '',
             ShortOpt: '',
             Hide: 0,
@@ -68,7 +105,7 @@
             Help: 'Use the Rclone binary that is bundled with the app, otherwise installed system wide version will be used (if not found, then you will receive and error).',
             Provider: '',
             Default: true,
-            Value: $main.getSetting('rclone_use_bundled'),
+            Value: rcloneUseBundled,
             ShortOpt: '',
             Hide: 0,
             Required: false,
@@ -81,21 +118,21 @@
             $Label: 'File cache time',
             $Type: 'numeric',
             Help: 'In seconds',
-            Value: $main.getSetting('rclone_cache_files')
+            Value: rcloneCacheFiles
           },
           {
             Name: 'rclone_cache_directories',
             $Label: 'Directory cache time',
             $Type: 'numeric',
             Help: 'In seconds',
-            Value: $main.getSetting('rclone_cache_directories')
+            Value: rcloneCacheDirectories
           },
           {
             Name: 'custom_args',
             $Label: 'Custom Rclone setting args.',
             $Type: 'text',
             Help: 'Space or new-line separated rclone command arguments to be appended to all commands.\nCheck more at https://rclone.org/docs/',
-            Value: $main.getSetting('custom_args'),
+            Value: customArgs,
             ShortOpt: '',
             Hide: 0,
             Required: false,
@@ -110,7 +147,7 @@
             $Label: 'Enable',
             $Type: 'boolean',
             Name: 'rclone_ncdu_enable',
-            Value: $main.getSetting('rclone_ncdu_enable')
+            Value: rcloneNcduEnable
           }
         ]))
 
@@ -119,10 +156,10 @@
             $Label: 'Enable',
             $Type: 'boolean',
             Name: 'rclone_sync_enable',
-            Value: $main.getSetting('rclone_sync_enable')
+            Value: rcloneSyncEnable
           },
           {
-            $Label: 'Automatic Upload',
+            $Label: 'Automatic Upload Delay',
             $Type: 'select',
             Name: 'rclone_sync_autoupload_delay',
             Examples: [
@@ -140,7 +177,7 @@
               },
               {
                 Label: '7s',
-                Value: 5
+                Value: 7
               },
               {
                 Label: '10s',
@@ -151,7 +188,7 @@
                 Value: 15
               }
             ],
-            Value: $main.getSetting('rclone_sync_autoupload_delay'),
+            Value: rcloneSyncAutouploadDelay,
             $RequireRestart: true,
             Help: 'Need restart to take effect.'
           }
@@ -162,55 +199,61 @@
             $Label: 'Enable HTTP',
             $Type: 'boolean',
             Name: 'rclone_serving_http_enable',
-            Value: $main.getSetting('rclone_serving_http_enable')
+            Value: rcloneServingHttpEnable
           },
           {
             $Label: 'Enable FTP',
             $Type: 'boolean',
             Name: 'rclone_serving_ftp_enable',
-            Value: $main.getSetting('rclone_serving_ftp_enable')
+            Value: rcloneServingFtpEnable
           },
           {
             $Label: 'Enable Restic',
             $Type: 'boolean',
             Name: 'rclone_serving_restic_enable',
-            Value: $main.getSetting('rclone_serving_restic_enable')
+            Value: rcloneServingResticEnable
           },
           {
             $Label: 'Enable WebDAV',
             $Type: 'boolean',
             Name: 'rclone_serving_webdav_enable',
-            Value: $main.getSetting('rclone_serving_webdav_enable')
+            Value: rcloneServingWebdavEnable
           },
           {
             $Label: 'Default username',
             $Type: 'string',
             Name: 'rclone_serving_username',
-            Value: $main.getSetting('rclone_serving_username')
+            Value: rcloneServingUsername
           },
           {
             $Label: 'Default password',
             $Type: 'password',
             Name: 'rclone_serving_password',
-            Value: $main.getSetting('rclone_serving_password')
+            Value: rcloneServingPassword
           }
         ]))
 
+        window.electronAPI.resizeToContent()
+
         let theForm = document.getElementById('the-form')
-        theForm.addEventListener('submit', function (event) {
-          event.preventDefault();
+        theForm.addEventListener('submit', async function (event) {
+          event.preventDefault()
           let data = window.electronAPI.getTheFormData(this)
 
-          let oldAutoStart = $main.isAutostart()
+          let oldAutoStart = await $main.isAutostart()
           if (oldAutoStart !== !!(data.auto_start || false)) {
             $main.setAutostart(data.auto_start || false)
           }
           delete data['auto_start']
 
-          $main.settingsMerge(data)
+          await $main.settingsMerge(data)
           $main.refreshTray()
-          window.checkForRequiredRestart()
-          window.close()
+          
+          if (window.requireRestart) {
+            window.htmlElements.checkForRequiredRestart()
+          } else {
+            window.close()
+          }
         })
 
       });

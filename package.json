@@ -2,7 +2,7 @@
   "name": "rclonetray",
   "productName": "RcloneTray",
   "title": "RcloneTray",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "releaseType": "release",
   "description": "Simple Rclone bookmark manager GUI that stays in the system tray.",
   "repository": {
@@ -23,26 +23,50 @@
     "url": "https://github.com/ysalitrynskyi/RcloneTray/issues"
   },
   "license": "MIT",
-  "main": "src/main.js",
+  "main": "dist/main.js",
   "scripts": {
     "postinstall": "./update-rclone-binaries.sh && electron-builder install-app-deps",
-    "start": "node_modules/.bin/electron .",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder",
-    "publish": "build -p always --mac --win --linux --x64"
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "typecheck:watch": "tsc --noEmit --watch",
+    "start": "npm run build && electron .",
+    "dev": "npm run build && electron .",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder",
+    "publish": "npm run build && electron-builder -p always --mac --win --linux --x64",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test"
   },
   "eslintConfig": {
-    "fix": true,
-    "envs": {
-      "es6": true,
-      "browser": false,
-      "node": true
+    "parser": "@typescript-eslint/parser",
+    "plugins": [
+      "@typescript-eslint"
+    ],
+    "extends": [
+      "eslint:recommended",
+      "plugin:@typescript-eslint/recommended"
+    ],
+    "parserOptions": {
+      "ecmaVersion": 2020,
+      "sourceType": "module"
+    },
+    "env": {
+      "node": true,
+      "es6": true
+    },
+    "rules": {
+      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/explicit-function-return-type": "off"
     }
   },
   "build": {
     "appId": "com.github.ysalitrynskyi.rclonetray",
     "files": [
-      "src"
+      "dist",
+      "src/ui"
     ],
     "asar": true,
     "asarUnpack": [
@@ -112,9 +136,17 @@
     "ini": "^2.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "@types/ini": "^4.1.0",
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
     "electron": "^29.1.4",
     "electron-builder": "^24.13.3",
     "electron-reload": "^1.5.0",
-    "standard": "^16.0.3"
+    "eslint": "^8.55.0",
+    "playwright": "^1.40.0",
+    "typescript": "^5.3.2",
+    "vitest": "^1.0.0"
   }
 }

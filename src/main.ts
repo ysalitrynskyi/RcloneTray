@@ -1,12 +1,13 @@
 'use strict'
 
-const path = require('path')
-const { app, BrowserWindow, Menu, dialog, ipcMain, Notification } = require('electron')
-const isDev = require('electron-is-dev')
-const dialogs = require('./dialogs')
-const tray = require('./tray')
-const rclone = require('./rclone')
-const settings = require('./settings')
+import * as path from 'path'
+import { app, BrowserWindow, Menu, dialog, ipcMain, Notification, IpcMainInvokeEvent, IpcMainEvent } from 'electron'
+import isDev from 'electron-is-dev'
+import * as dialogs from './dialogs'
+import * as tray from './tray'
+import * as rclone from './rclone'
+import * as settings from './settings'
+import { DialogWindow, SettingKey, Settings } from './types'
 
 // Error handler
 
@@ -14,39 +15,44 @@ ipcMain.handle('get-app-path', () => app.getAppPath())
 ipcMain.handle('get-app-name', () => app.getName())
 ipcMain.handle('get-app-version', () => app.getVersion())
 
-ipcMain.on('refresh-tray', async () => {
+ipcMain.on('refresh-tray', () => {
   tray.refresh()
 })
 
-ipcMain.on('rclone', () => rclone)
-ipcMain.on('settings', () => tray)
-ipcMain.handle('get-setting', (event, key) => {
+ipcMain.handle('get-setting', (_event: IpcMainInvokeEvent, key: SettingKey) => {
   return settings.get(key)
 })
-ipcMain.handle('settings-merge', (data) => {
+
+ipcMain.handle('settings-merge', (_event: IpcMainInvokeEvent, data: Partial<Settings>) => {
   return settings.merge(data)
 })
+
 ipcMain.handle('get-rclone-version', () => {
   return rclone.getVersion()
 })
+
 ipcMain.handle('get-rclone-providers', () => {
   return rclone.getProviders()
 })
-ipcMain.handle('get-rclone-book', (type, name, options) => {
+
+ipcMain.handle('get-rclone-book', (_event: IpcMainInvokeEvent, type: string, name: string, options: Record<string, string>) => {
   return rclone.addBookmark(type, name, options)
 })
-ipcMain.handle('get-rclone-delete-book', (name) => {
+
+ipcMain.handle('get-rclone-delete-book', (_event: IpcMainInvokeEvent, name: string) => {
   return rclone.deleteBookmark(name)
 })
-ipcMain.handle('get-rclone-update-book', (name, options) => {
+
+ipcMain.handle('get-rclone-update-book', (_event: IpcMainInvokeEvent, name: string, options: Record<string, string>) => {
   return rclone.updateBookmark(name, options)
 })
+
 ipcMain.handle('get-rclone-get-config-file', () => {
   return rclone.getConfigFile()
 })
 
-ipcMain.on('get-provider-data', (event, providerName) => {
-  const provider = rclone.getProvider(providerName) // Fetch provider data
+ipcMain.on('get-provider-data', (event: IpcMainEvent, providerName: string) => {
+  const provider = rclone.getProvider(providerName)
   event.reply('provider-data-reply', provider)
 })
 
@@ -54,45 +60,45 @@ ipcMain.handle('rclone-get-config', async () => {
   return rclone.getConfig()
 })
 
-ipcMain.handle('settings-get', async (event, key) => {
+ipcMain.handle('settings-get', async (_event: IpcMainInvokeEvent, key: SettingKey) => {
   return settings.get(key)
 })
 
-ipcMain.on('settings-set', (event, key, value) => {
-  settings.set(key, value)
+ipcMain.on('settings-set', (_event: IpcMainEvent, key: SettingKey, value: Settings[SettingKey]) => {
+  settings.set(key, value as never)
 })
 
-ipcMain.on('set-autostart', (event, state) => {
+ipcMain.on('set-autostart', (_event: IpcMainEvent, state: boolean) => {
   app.setLoginItemSettings({ openAtLogin: state })
 })
 
 ipcMain.handle('is-autostart', async () => {
-  const settings = app.getLoginItemSettings()
-  return settings.openAtLogin
+  const loginSettings = app.getLoginItemSettings()
+  return loginSettings.openAtLogin
 })
 
 ipcMain.handle('get-props', async () => {
-  const window = BrowserWindow.getFocusedWindow()
-  return window ? window.$props : {}
+  const window = BrowserWindow.getFocusedWindow() as DialogWindow | null
+  return window?.$props || {}
 })
 
-ipcMain.on('popup-context-menu', (event, menuTemplate) => {
+ipcMain.on('popup-context-menu', (_event: IpcMainEvent, menuTemplate: Electron.MenuItemConstructorOptions[]) => {
   const menu = Menu.buildFromTemplate(menuTemplate)
-  menu.popup(BrowserWindow.getFocusedWindow())
+  menu.popup({ window: BrowserWindow.getFocusedWindow() || undefined })
 })
 
-ipcMain.handle('show-message-box', async (event, { message }) => {
+ipcMain.handle('show-message-box', async (_event: IpcMainInvokeEvent, { message }: { message: string }) => {
   const focusedWindow = BrowserWindow.getFocusedWindow()
-  const response = await dialog.showMessageBox(focusedWindow, {
+  const response = await dialog.showMessageBox(focusedWindow as BrowserWindow, {
     message,
     buttons: ['OK']
   })
   return response.response
 })
 
-ipcMain.handle('confirm-dialog', async (event, { message }) => {
+ipcMain.handle('confirm-dialog', async (_event: IpcMainInvokeEvent, { message }: { message: string }) => {
   const focusedWindow = BrowserWindow.getFocusedWindow()
-  const response = await dialog.showMessageBox(focusedWindow, {
+  const response = await dialog.showMessageBox(focusedWindow as BrowserWindow, {
     type: 'question',
     buttons: ['Yes', 'No'],
     defaultId: 0,
@@ -101,16 +107,15 @@ ipcMain.handle('confirm-dialog', async (event, { message }) => {
   return response.response
 })
 
-ipcMain.on('error-box', (event, { message }) => {
-  BrowserWindow.getFocusedWindow()
+ipcMain.on('error-box', (_event: IpcMainEvent, { message }: { message: string }) => {
   dialog.showErrorBox('Error', message)
 })
 
-ipcMain.on('show-notification', (event, { message }) => {
+ipcMain.on('show-notification', (_event: IpcMainEvent, { message }: { message: string }) => {
   new Notification({ title: 'Notification', body: message.toString() }).show()
 })
 
-ipcMain.on('resize-window', (event, newHeight) => {
+ipcMain.on('resize-window', (_event: IpcMainEvent, newHeight: number) => {
   const window = BrowserWindow.getFocusedWindow()
   if (!window) return
 
@@ -122,9 +127,9 @@ ipcMain.on('resize-window', (event, newHeight) => {
   }
 })
 
-ipcMain.handle('select-directory', async (event, { defaultDirectory }) => {
+ipcMain.handle('select-directory', async (_event: IpcMainInvokeEvent, { defaultDirectory }: { defaultDirectory?: string }) => {
   const focusedWindow = BrowserWindow.getFocusedWindow()
-  const result = await dialog.showOpenDialog(focusedWindow, {
+  const result = await dialog.showOpenDialog(focusedWindow as BrowserWindow, {
     title: 'Select Directory',
     defaultPath: defaultDirectory || app.getPath('home'),
     properties: ['openDirectory', 'createDirectory']
@@ -137,9 +142,9 @@ ipcMain.handle('select-directory', async (event, { defaultDirectory }) => {
   }
 })
 
-ipcMain.handle('select-file', async (event, defaultFile) => {
+ipcMain.handle('select-file', async (_event: IpcMainInvokeEvent, defaultFile?: string) => {
   const window = BrowserWindow.getFocusedWindow()
-  const { filePaths } = await dialog.showOpenDialog(window, {
+  const { filePaths } = await dialog.showOpenDialog(window as BrowserWindow, {
     title: 'Select File',
     defaultPath: defaultFile || app.getPath('home'),
     properties: ['openFile', 'showHiddenFiles']
@@ -147,7 +152,7 @@ ipcMain.handle('select-file', async (event, defaultFile) => {
   return filePaths
 })
 
-ipcMain.on('check-require-restart', async (event) => {
+ipcMain.on('check-require-restart', async () => {
   const choice = await dialog.showMessageBox({
     type: 'warning',
     buttons: ['Restart', 'Ignore'],
@@ -161,15 +166,11 @@ ipcMain.on('check-require-restart', async (event) => {
   }
 })
 
-process.on('uncaughtException', function (error) {
+process.on('uncaughtException', function (error: Error) {
   if (dialogs.uncaughtException(error)) {
     app.exit()
   }
 })
-
-// if (process.arch !== 'x64' && process.arch !== 'arm64') {
-//   throw new Error('The application can be started on 64-bit platforms only.')
-// }
 
 // Check the OS.
 if (!['win32', 'linux', 'darwin'].includes(process.platform)) {
@@ -196,7 +197,6 @@ if (isDev) {
   const inspector = require('inspector')
 
   if (inspector.url()) {
-    // Inspector is already open, so close it before opening again
     inspector.close()
   }
 
@@ -215,7 +215,7 @@ if (isDev) {
   } catch (err) { }
 
   // @TODO Remove before release
-  global.$main = {
+  ;(global as Record<string, unknown>).$main = {
     app: app,
     __dirname: __dirname,
     require: require
@@ -223,11 +223,10 @@ if (isDev) {
 }
 
 // Focus the app if a second instance is going to start.
-app.on('second-instance', app.focus)
+app.on('second-instance', () => app.focus())
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
 app.on('ready', function () {
   // Initialize the tray.
   tray.init()
@@ -248,6 +247,7 @@ app.on('before-quit', rclone.prepareQuit)
 
 // Should not quit when all windows are closed,
 // because the application is staying as a system tray indicator.
-app.on('window-all-closed', function (event) {
+app.on('window-all-closed', function (event: Electron.Event) {
   event.preventDefault()
 })
+

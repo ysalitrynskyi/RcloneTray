@@ -1,16 +1,16 @@
 'use strict'
 
-const path = require('path')
-const { shell, app, BrowserWindow, Menu, Notification, dialog } = require('electron')
-const electronContextMenu = require('electron-context-menu')
-const isDev = require('electron-is-dev')
-const settings = require('./settings')
+import * as path from 'path'
+import { shell, app, BrowserWindow, Menu, Notification, dialog, MenuItemConstructorOptions } from 'electron'
+import electronContextMenu from 'electron-context-menu'
+import isDev from 'electron-is-dev'
+import * as settings from './settings'
+import { DialogProps, DialogWindow, Bookmark } from './types'
 
 /**
  * Set the background color
- * @private
  */
-const backgroundColor = process.platform === 'darwin'
+const backgroundColor: string | undefined = process.platform === 'darwin'
   ? '#ececec'
   : process.platform === 'win32'
     ? '#ffffff'
@@ -18,32 +18,31 @@ const backgroundColor = process.platform === 'darwin'
 
 /**
  * Dialog names that should be opened with single instances
- * @type {{}}
- * @private
  */
-const dialogsSingletoneInstances = {}
+const dialogsSingletoneInstances: Record<string, DialogWindow | null> = {}
+
+interface DialogOptions extends Electron.BrowserWindowConstructorOptions {
+  $singleId?: string | number
+}
 
 /**
  * Simple factory for the dialogs
- * @param {string} dialogName
- * @param {{}} options
- * @param {{}} props
- * @returns {BrowserWindow}
- * @private
  */
-const createNewDialog = function (dialogName, options, props) {
-  let singleId = options && options.$singleId
-  if (singleId) {
+function createNewDialog(dialogName: string, options?: DialogOptions, props?: DialogProps): DialogWindow | null {
+  let singleId: string | undefined
+  
+  if (options?.$singleId) {
+    singleId = dialogName + '/' + options.$singleId.toString()
     delete options.$singleId
-    singleId = dialogName + '/' + singleId.toString()
-    if (dialogsSingletoneInstances.hasOwnProperty(singleId) && dialogsSingletoneInstances[singleId]) {
-      dialogsSingletoneInstances[singleId].focus()
+    
+    if (Object.prototype.hasOwnProperty.call(dialogsSingletoneInstances, singleId) && dialogsSingletoneInstances[singleId]) {
+      dialogsSingletoneInstances[singleId]!.focus()
       return dialogsSingletoneInstances[singleId]
     }
   }
 
   // Dialog options.
-  options = {
+  const dialogOptions: Electron.BrowserWindowConstructorOptions = {
     maximizable: false,
     minimizable: true,
     resizable: false,
@@ -55,7 +54,6 @@ const createNewDialog = function (dialogName, options, props) {
     autoHideMenuBar: true,
     skipTaskbar: false,
     webPreferences: {
-      enableRemoteModule: true,
       backgroundThrottling: false,
       preload: path.join(__dirname, 'dialogs-preload.js'),
       devTools: isDev,
@@ -69,14 +67,15 @@ const createNewDialog = function (dialogName, options, props) {
   }
 
   // Instantinate the window.
-  let theDialog = new BrowserWindow(options)
+  let theDialog: DialogWindow | null = new BrowserWindow(dialogOptions) as DialogWindow
+  
   if (process.platform === 'darwin') {
     app.dock.show()
 
     // Resizing from renderer is blocking process, so next is workaround to get smooth resize without IPC
-    theDialog.setSizeAsync = function (width, height) {
-      setImmediate(function () {
-        theDialog.setSize(width, height, true)
+    theDialog.setSizeAsync = function (width: number, height: number): void {
+      setImmediate(() => {
+        theDialog?.setSize(width, height, true)
       })
     }
   }
@@ -84,17 +83,14 @@ const createNewDialog = function (dialogName, options, props) {
   // Assign $props that we will use in window.getProps() as window properties (params) on load time.
   theDialog.$props = props || {}
 
-  theDialog.on('ready-to-show', theDialog.show)
-  // theDialog.on('show', app.focus)
+  theDialog.on('ready-to-show', () => theDialog?.show())
 
   // and load the index.html of the app.
-  theDialog.loadFile(path.join(__dirname, 'ui', 'dialogs', dialogName + '.html'))
+  theDialog.loadFile(path.join(__dirname, '..', 'src', 'ui', 'dialogs', dialogName + '.html'))
 
   // Emitted when the window is closed.
   theDialog.on('closed', function () {
-    // Dereference the window object, usually you would store windows
-    // in an array if your app supports multi windows, this is the time
-    // when you should delete the corresponding element.
+    // Dereference the window object
     theDialog = null
 
     if (singleId) {
@@ -108,9 +104,9 @@ const createNewDialog = function (dialogName, options, props) {
   })
 
   // Open links in system default browser.
-  theDialog.webContents.on('new-window', function (event, url) {
-    event.preventDefault()
+  theDialog.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
+    return { action: 'deny' }
   })
 
   if (singleId) {
@@ -123,7 +119,7 @@ const createNewDialog = function (dialogName, options, props) {
 /**
  * Show About dialog
  */
-const about = function () {
+export function about(): void {
   const aboutDialog = createNewDialog('About', {
     $singleId: 1,
     title: 'About',
@@ -136,19 +132,19 @@ const about = function () {
     // Make the window sexy.
     vibrancy: 'appearance-based',
     titleBarStyle: 'hidden',
-    backgroundColor: null
+    backgroundColor: undefined
   })
 
   // Close when loose focus, but only when non-dev because even the dev tool trigger the close.
-  if (!isDev) {
-    aboutDialog.on('blur', aboutDialog.close)
+  if (!isDev && aboutDialog) {
+    aboutDialog.on('blur', () => aboutDialog.close())
   }
 }
 
 /**
  * Show Preferences dialog
  */
-const preferences = function () {
+export function preferences(): void {
   createNewDialog('Preferences', {
     $singleId: 1,
     width: 600,
@@ -159,7 +155,7 @@ const preferences = function () {
 /**
  * Show new Bookmark dialog
  */
-const addBookmark = function () {
+export function addBookmark(): void {
   createNewDialog('AddBookmark', {
     $singleId: 1,
     width: 600,
@@ -170,8 +166,8 @@ const addBookmark = function () {
 /**
  * Show edit Bookmark dialog
  */
-const editBookmark = function () {
-  let props = this
+export function editBookmark(this: Bookmark): void {
+  const props: DialogProps = { ...this }
   createNewDialog('EditBookmark', {
     $singleId: this.$name,
     width: 600,
@@ -181,78 +177,70 @@ const editBookmark = function () {
 
 /**
  * Show OS notification
- * @param {string} message
  */
-const notification = function (message) {
-  (new Notification({
+export function notification(message: string): void {
+  new Notification({
     body: message
-  })).show()
+  }).show()
 }
 
 /**
  * Multi Instance error
  */
-const errorMultiInstance = function () {
-  // @TODO consider switch to notification (baloon),
-  //       the problem is that Notifications are available after app is ready
-  // (new Notification({ body: 'RcloneTray is already started and cannot be started twice.' })).show()
+export function errorMultiInstance(): void {
   dialog.showErrorBox('', 'RcloneTray is already started and cannot be started twice.')
 }
 
 /**
  * Show the Uncaught Exception dialog
- * @param {Error} detail
- * @returns {boolean} Should exit
+ * @returns Should exit (true if should exit)
  */
-const uncaughtException = function (detail) {
-  const errorMessage = detail instanceof Error ? `${detail.message}\n${detail.stack}` : detail.toString()
+export function uncaughtException(detail: Error | unknown): boolean {
+  const errorMessage = detail instanceof Error ? `${detail.message}\n${detail.stack}` : String(detail)
+  
   if (app.isReady()) {
-    dialog.showMessageBox({
-      type: 'warning',
-      buttons: ['Quit RcloneTray', 'Cancel'],
+    const choice = dialog.showMessageBoxSync({
+      type: 'error',
+      buttons: ['Quit RcloneTray', 'Continue'],
+      defaultId: 0,
       title: 'Error',
       message: 'Unexpected runtime error.',
       detail: errorMessage
-    }).then((result) => {
-      if (result.response === 0) {
-        app.quit()
-      }
     })
+    return choice === 0
   } else {
     dialog.showErrorBox('Unexpected runtime error. RcloneTray cannot start.', errorMessage)
-    app.exit(1)
+    return true
   }
 }
 
 /**
  * Show confirm exit dialog.
- * @returns {boolean}
  */
-const confirmExit = function () {
-  let choice = dialog.showMessageBox(null, {
+export function confirmExit(): boolean {
+  const choice = dialog.showMessageBoxSync({
     type: 'warning',
     buttons: ['Yes', 'No'],
     title: 'Quit RcloneTray',
     message: 'Are you sure you want to quit?',
-    detail: 'There is active processes that will be terminated.'
+    detail: 'There are active processes that will be terminated.'
   })
   return choice === 0
 }
 
 /**
  * Show missing Rclone action dialog
- * @returns {Number}
  */
-const missingRclone = function () {
-  let choice = dialog.showMessageBox(null, {
+export function missingRclone(): number {
+  const choice = dialog.showMessageBoxSync({
     type: 'warning',
     buttons: ['Go Rclone Website', 'Switch to bundled version', 'Quit'],
     title: 'Error',
-    message: 'Seems that Rclone is not installed (or cannot be found) on your system.\n\nYou need to install Rclne to your system or to switch to use bundled version of Rclone.\n'
+    message: 'Seems that Rclone is not installed (or cannot be found) on your system.\n\nYou need to install Rclone to your system or to switch to use bundled version of Rclone.\n'
   })
 
   if (choice === 0) {
-    shell.openExternal('http://rclone.org/downloads/')
+    shell.openExternal('https://rclone.org/downloads/')
     app.exit()
   } else if (choice === 1) {
     settings.set('rclone_use_bundled', true)
@@ -265,11 +253,10 @@ const missingRclone = function () {
 
 /**
  * Initialize module
-*/
-const init = function () {
+ */
+function init(): void {
   // Build the global menu
-  // @see https://electronjs.org/docs/api/menu#examples
-  let template = [
+  const template: MenuItemConstructorOptions[] = [
     {
       label: 'Edit',
       submenu: [
@@ -279,11 +266,12 @@ const init = function () {
         { role: 'cut' },
         { role: 'copy' },
         { role: 'paste' },
-        { role: 'pasteandmatchstyle' },
+        { role: 'pasteAndMatchStyle' },
         { role: 'delete' },
-        { role: 'selectall' }
+        { role: 'selectAll' }
       ]
-    }]
+    }
+  ]
 
   template.push({
     role: 'window',
@@ -303,16 +291,19 @@ const init = function () {
     })
 
     // Edit menu
-    template[1].submenu.push(
-      { type: 'separator' },
-      {
-        label: 'Speech',
-        submenu: [
-          { role: 'startspeaking' },
-          { role: 'stopspeaking' }
-        ]
-      }
-    )
+    const editMenu = template[1]
+    if (editMenu.submenu && Array.isArray(editMenu.submenu)) {
+      editMenu.submenu.push(
+        { type: 'separator' },
+        {
+          label: 'Speech',
+          submenu: [
+            { role: 'startSpeaking' },
+            { role: 'stopSpeaking' }
+          ]
+        }
+      )
+    }
 
     // Window menu
     template[2].submenu = [
@@ -329,8 +320,8 @@ const init = function () {
       label: 'Debug',
       submenu: [
         { role: 'reload' },
-        { role: 'forcereload' },
-        { role: 'toggledevtools' }
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' }
       ]
     })
   }
@@ -349,8 +340,7 @@ const init = function () {
 // Do the initialization.
 init()
 
-// Module object.
-module.exports = {
+export default {
   about,
   editBookmark,
   addBookmark,
@@ -361,3 +351,4 @@ module.exports = {
   missingRclone,
   notification
 }
+

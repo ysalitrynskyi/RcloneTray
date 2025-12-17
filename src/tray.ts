@@ -1,149 +1,168 @@
 'use strict'
 
-const path = require('path')
-const { Tray, Menu, shell } = require('electron')
-const isDev = require('electron-is-dev')
-const settings = require('./settings')
-const rclone = require('./rclone')
-const dialogs = require('./dialogs')
+import * as path from 'path'
+import { Tray, Menu, shell, MenuItemConstructorOptions } from 'electron'
+import isDev from 'electron-is-dev'
+import * as settings from './settings'
+import * as rclone from './rclone'
+import * as dialogs from './dialogs'
+import { Bookmark, ServeProtocol } from './types'
 
 /**
  * Host the initialized Tray object.
- * @type {Tray}
- * @private
  */
-let trayIndicator = null
+let trayIndicator: Tray | null = null
 
 /**
  * Host the atomic timer
- * @private
  */
-let refreshTrayMenuAtomicTimer = null
+let refreshTrayMenuAtomicTimer: NodeJS.Timeout | null = null
 
 /**
  * Tray icons
- * @private
  */
-const icons = {}
+const icons: { default?: string; connected?: string } = {}
 
 /**
  * Label for platform's file browser
- * @private
  */
-const fileExplorerLabel = process.platform === 'darwin'
+const fileExplorerLabel: string = process.platform === 'darwin'
   ? 'Finder'
   : process.platform === 'win32'
     ? 'Explorer'
     : 'File Browser'
 
+type BookmarkAction = 
+  | 'mount' 
+  | 'unmount' 
+  | 'open-mounted' 
+  | 'download' 
+  | 'stop-downloading'
+  | 'upload' 
+  | 'stop-uploading' 
+  | 'toggle-automatic-upload'
+  | 'open-local' 
+  | 'serve-start' 
+  | 'serve-stop' 
+  | 'open-ncdu'
+  | 'open-web-browser' 
+  | 'open-config' 
+  | 'delete-bookmark'
+
 /**
  * Do action with bookmark
- * @param {string} action
- * @param args
  */
-const bookmarkActionRouter = function (action, ...args) {
+function bookmarkActionRouter(this: Bookmark | null, action: BookmarkAction, ...args: unknown[]): void {
   switch (action) {
     case 'mount':
-      rclone.mount(this)
+      if (this) rclone.mount(this)
       break
     case 'unmount':
-      rclone.unmount(this)
+      if (this) rclone.unmount(this)
       break
     case 'open-mounted':
-      rclone.openMountPoint(this)
+      if (this) rclone.openMountPoint(this)
       break
     case 'download':
-      rclone.download(this)
+      if (this) rclone.download(this)
       break
     case 'stop-downloading':
-      rclone.stopDownload(this)
+      if (this) rclone.stopDownload(this)
       break
     case 'upload':
-      rclone.upload(this)
+      if (this) rclone.upload(this)
       break
     case 'stop-uploading':
-      rclone.stopUpload(this)
+      if (this) rclone.stopUpload(this)
       break
     case 'toggle-automatic-upload':
-      rclone.toggleAutomaticUpload(this)
+      if (this) rclone.toggleAutomaticUpload(this)
       break
     case 'open-local':
-      rclone.openLocal(this)
+      if (this) rclone.openLocal(this)
       break
     case 'serve-start':
-      rclone.serveStart(args[0], this)
+      if (this) rclone.serveStart(args[0] as ServeProtocol, this)
       break
     case 'serve-stop':
-      rclone.serveStop(args[0], this)
+      if (this) rclone.serveStop(args[0] as ServeProtocol, this)
       break
     case 'open-ncdu':
-      rclone.openNCDU(this)
+      if (this) rclone.openNCDU(this)
       break
     case 'open-web-browser':
-      shell.openExternal(args[0])
+      shell.openExternal(args[0] as string)
       break
     case 'open-config':
       shell.openPath(rclone.getConfigFile())
       break
     case 'delete-bookmark':
-      rclone.deleteBookmark(this.$name)
+      if (this) rclone.deleteBookmark(this.$name)
       break
     default:
       console.error('No such action', action, args, this)
   }
 }
 
+interface BookmarkMenuResult {
+  template: MenuItemConstructorOptions
+  isConnected: boolean
+}
+
 /**
  * Bookmark submenu
- *
- * @returns {{}}
- * @param bookmark
  */
-const generateBookmarkActionsSubmenu = function (bookmark) {
+function generateBookmarkActionsSubmenu(bookmark: Bookmark): BookmarkMenuResult {
   // If by some reason bookmark is broken, then show actions menu.
   if (!bookmark.$name || !bookmark.type) {
     return {
-      label: bookmark.$name || '<Unknown>',
-      enabled: false,
-      type: 'submenu',
-      submenu: [
-        {
-          label: 'Fix config file',
-          click: bookmarkActionRouter.bind(null, 'open-config')
-        },
-        {
-          label: 'Delete',
-          enabled: !!bookmark.$name,
-          click: bookmarkActionRouter.bind(bookmark, 'delete-bookmark')
-        }
-      ]
+      template: {
+        label: bookmark.$name || '<Unknown>',
+        enabled: false,
+        type: 'submenu',
+        submenu: [
+          {
+            label: 'Fix config file',
+            click: () => bookmarkActionRouter.call(null, 'open-config')
+          },
+          {
+            label: 'Delete',
+            enabled: !!bookmark.$name,
+            click: () => bookmarkActionRouter.call(bookmark, 'delete-bookmark')
+          }
+        ]
+      },
+      isConnected: false
     }
   }
 
   // Main template
-  let template = {
+  const template: MenuItemConstructorOptions = {
     type: 'submenu',
     submenu: []
   }
 
+  const submenu = template.submenu as MenuItemConstructorOptions[]
+
   // Mount
-  let isMounted = rclone.getMountStatus(bookmark)
-  template.submenu.push({
+  const isMounted = rclone.getMountStatus(bookmark)
+  submenu.push({
     label: 'Mount',
-    click: bookmarkActionRouter.bind(bookmark, 'mount'),
+    click: () => bookmarkActionRouter.call(bookmark, 'mount'),
     checked: !!isMounted,
     enabled: isMounted === false
   })
+
   if (isMounted !== false) {
-    template.submenu.push(
+    submenu.push(
       {
         label: 'Unmount',
-        click: bookmarkActionRouter.bind(bookmark, 'unmount')
+        click: () => bookmarkActionRouter.call(bookmark, 'unmount')
       },
       {
         label: `Open In ${fileExplorerLabel}`,
         enabled: !!isMounted,
-        click: bookmarkActionRouter.bind(bookmark, 'open-mounted')
+        click: () => bookmarkActionRouter.call(bookmark, 'open-mounted')
       }
     )
   }
@@ -152,11 +171,13 @@ const generateBookmarkActionsSubmenu = function (bookmark) {
   let isDownload = false
   let isUpload = false
   let isAutomaticUpload = false
-  if (settings.get('rclone_sync_enable') && '_rclonetray_local_path_map' in bookmark && bookmark._rclonetray_local_path_map.trim()) {
+  
+  if (settings.get('rclone_sync_enable') && bookmark._rclonetray_local_path_map && bookmark._rclonetray_local_path_map.trim()) {
     isDownload = rclone.isDownload(bookmark)
     isUpload = rclone.isUpload(bookmark)
     isAutomaticUpload = rclone.isAutomaticUpload(bookmark)
-    template.submenu.push(
+    
+    submenu.push(
       {
         type: 'separator'
       },
@@ -165,91 +186,91 @@ const generateBookmarkActionsSubmenu = function (bookmark) {
         label: 'Download',
         enabled: !isAutomaticUpload && !isUpload && !isDownload,
         checked: isDownload,
-        click: bookmarkActionRouter.bind(bookmark, 'download')
+        click: () => bookmarkActionRouter.call(bookmark, 'download')
       },
       {
         type: 'checkbox',
         label: 'Upload',
         enabled: !isAutomaticUpload && !isUpload && !isDownload,
         checked: isUpload,
-        click: bookmarkActionRouter.bind(bookmark, 'upload')
+        click: () => bookmarkActionRouter.call(bookmark, 'upload')
       },
       {
         type: 'checkbox',
         label: 'Automatic Upload',
         checked: isAutomaticUpload,
-        click: bookmarkActionRouter.bind(bookmark, 'toggle-automatic-upload')
-      })
+        click: () => bookmarkActionRouter.call(bookmark, 'toggle-automatic-upload')
+      }
+    )
 
     if (isDownload) {
-      template.submenu.push({
+      submenu.push({
         label: 'Stop Downloading',
-        click: bookmarkActionRouter.bind(bookmark, 'stop-downloading')
+        click: () => bookmarkActionRouter.call(bookmark, 'stop-downloading')
       })
     }
 
     if (isUpload) {
-      template.submenu.push({
+      submenu.push({
         label: 'Stop Uploading',
-        click: bookmarkActionRouter.bind(bookmark, 'stop-uploading')
+        click: () => bookmarkActionRouter.call(bookmark, 'stop-uploading')
       })
     }
 
-    template.submenu.push({
+    submenu.push({
       label: 'Show In Finder',
-      click: bookmarkActionRouter.bind(bookmark, 'open-local')
+      click: () => bookmarkActionRouter.call(bookmark, 'open-local')
     })
   }
 
   // Serving.
   let isServing = false
-  let availableServingProtocols = rclone.getAvailableServeProtocols()
-  let availableServingProtocolsLen = Object.keys(availableServingProtocols).length
-  if (availableServingProtocolsLen) {
-    template.submenu.push(
-      {
-        type: 'separator'
-      })
+  const availableServingProtocols = rclone.getAvailableServeProtocols()
+  const protocolKeys = Object.keys(availableServingProtocols) as ServeProtocol[]
+  const availableServingProtocolsLen = protocolKeys.length
 
-    let i = 0
-    Object.keys(availableServingProtocols).forEach(function (protocol) {
-      i++
-      let servingURI = rclone.serveStatus(protocol, bookmark)
+  if (availableServingProtocolsLen) {
+    submenu.push({
+      type: 'separator'
+    })
+
+    protocolKeys.forEach((protocol, i) => {
+      const servingURI = rclone.serveStatus(protocol, bookmark)
 
       // Add separator before the menu item, only if current serve method is in process.
       if (servingURI !== false) {
         isServing = true
-        if (i > 1) {
-          template.submenu.push({
+        if (i > 0) {
+          submenu.push({
             type: 'separator'
           })
         }
       }
 
-      template.submenu.push({
+      submenu.push({
         type: 'checkbox',
         label: `Serve ${availableServingProtocols[protocol]}`,
-        click: bookmarkActionRouter.bind(bookmark, 'serve-start', protocol),
+        click: () => bookmarkActionRouter.call(bookmark, 'serve-start', protocol),
         enabled: servingURI === false,
         checked: !!servingURI
       })
 
       if (servingURI !== false) {
-        template.submenu.push(
+        submenu.push(
           {
             label: 'Stop',
-            click: bookmarkActionRouter.bind(bookmark, 'serve-stop', protocol)
+            click: () => bookmarkActionRouter.call(bookmark, 'serve-stop', protocol)
           },
           {
             label: `Open "${servingURI}"`,
-            click: bookmarkActionRouter.bind(bookmark, 'open-web-browser', servingURI),
+            click: () => bookmarkActionRouter.call(bookmark, 'open-web-browser', servingURI),
             enabled: !!servingURI
           }
         )
 
         // Add separator after the menu item, only if current serve method is in process.
-        if (i < availableServingProtocolsLen) {
-          template.submenu.push({
+        if (i < availableServingProtocolsLen - 1) {
+          submenu.push({
             type: 'separator'
           })
         }
@@ -259,50 +280,52 @@ const generateBookmarkActionsSubmenu = function (bookmark) {
 
   // NCDU
   if (settings.get('rclone_ncdu_enable')) {
-    template.submenu.push(
+    submenu.push(
       {
         type: 'separator'
       },
       {
         label: 'Console Browser',
-        click: bookmarkActionRouter.bind(bookmark, 'open-ncdu')
+        click: () => bookmarkActionRouter.call(bookmark, 'open-ncdu')
       }
     )
   }
 
   // Set the menu item state if there is any kind of connection or current running process.
-  let isConnected = isMounted || isDownload || isUpload || isServing || isAutomaticUpload
+  const isConnected = !!(isMounted || isDownload || isUpload || isServing || isAutomaticUpload)
 
   // Bookmark controls.
-  template.submenu.push(
+  submenu.push(
     {
       type: 'separator'
     },
     {
       label: 'Edit',
       enabled: !isConnected,
-      click: dialogs.editBookmark.bind(bookmark)
+      click: () => dialogs.editBookmark.call(bookmark)
     }
   )
 
   // Set the bookmark label
-  template.label = bookmark.$name
+  let label = bookmark.$name
 
   if (settings.get('tray_menu_show_type')) {
-    template.label += ' - ' + bookmark.type.toUpperCase()
+    label += ' - ' + bookmark.type.toUpperCase()
   }
 
   if (process.platform === 'darwin') {
     // Because Apple likes rhombuses.
-    template.label = (isConnected ? '◆ ' : '') + template.label
+    label = (isConnected ? '◆ ' : '') + label
   } else {
-    template.label = (isConnected ? '● ' : '○ ') + template.label
+    label = (isConnected ? '● ' : '○ ') + label
   }
 
   // Usually should not goes here.
-  if (!template.label) {
-    template.label = '<Unknown>'
+  if (!label) {
+    label = '<Unknown>'
   }
+
+  template.label = label
 
   return {
     template,
@@ -313,7 +336,7 @@ const generateBookmarkActionsSubmenu = function (bookmark) {
 /**
  * Refreshing try menu.
  */
-const refreshTrayMenu = function () {
+function refreshTrayMenu(): void {
   // If by some reason some part of the code do this.refresh(),
   // before the tray icon initialization, must not continue because possible error.
   if (!trayIndicator) {
@@ -324,7 +347,7 @@ const refreshTrayMenu = function () {
     console.log('Refresh tray indicator menu')
   }
 
-  let menuItems = []
+  const menuItems: MenuItemConstructorOptions[] = []
   let isConnected = false
 
   menuItems.push({
@@ -333,14 +356,14 @@ const refreshTrayMenu = function () {
     accelerator: 'CommandOrControl+N'
   })
 
-  let bookmarks = rclone.getBookmarks()
+  const bookmarks = rclone.getBookmarks()
 
   if (Object.keys(bookmarks).length > 0) {
     menuItems.push({
       type: 'separator'
     })
-    for (let key in bookmarks) {
-      let bookmarkMenu = generateBookmarkActionsSubmenu(bookmarks[key])
+    for (const key in bookmarks) {
+      const bookmarkMenu = generateBookmarkActionsSubmenu(bookmarks[key])
       menuItems.push(bookmarkMenu.template)
       if (bookmarkMenu.isConnected) {
         isConnected = true
@@ -367,19 +390,22 @@ const refreshTrayMenu = function () {
     {
       accelerator: 'CommandOrControl+Q',
       role: 'quit'
-    })
+    }
+  )
 
   // Set the menu.
   trayIndicator.setContextMenu(Menu.buildFromTemplate(menuItems))
 
   // Set icon acording to the status
-  trayIndicator.setImage(isConnected ? icons.connected : icons.default)
+  if (icons.connected && icons.default) {
+    trayIndicator.setImage(isConnected ? icons.connected : icons.default)
+  }
 }
 
 /**
  * Refresh the tray menu.
  */
-const refresh = function () {
+export function refresh(): void {
   // Use some kind of static variable to store the timer
   if (refreshTrayMenuAtomicTimer) {
     clearTimeout(refreshTrayMenuAtomicTimer)
@@ -392,7 +418,7 @@ const refresh = function () {
 /**
  * Initialize the tray menu.
  */
-const init = function () {
+export function init(): void {
   if (trayIndicator) {
     // Avoid double tray loader
     console.error('Cannot start more than one tray indicators.')
@@ -400,18 +426,19 @@ const init = function () {
   }
 
   // Define icons based on platform
-  const iconPath = path.join(__dirname, 'ui', 'icons')
+  const iconPath = path.join(__dirname, '..', 'src', 'ui', 'icons')
 
   if (process.platform === 'darwin') {
     icons.default = path.join(iconPath, 'iconTemplate.png')
     icons.connected = path.join(iconPath, 'icon-connectedTemplate.png')
   } else {
-    icons.default = `${iconPath}/icon${process.platform === 'win32' ? '.ico' : '.png'}`
-    icons.connected = `${iconPath}/icon-connected${process.platform === 'win32' ? '.ico' : '.png'}`
+    icons.default = path.join(iconPath, `icon${process.platform === 'win32' ? '.ico' : '.png'}`)
+    icons.connected = path.join(iconPath, `icon-connected${process.platform === 'win32' ? '.ico' : '.png'}`)
   }
 
   // Add system tray icon.
   trayIndicator = new Tray(icons.default)
 }
 
-module.exports = { refresh, init }
+export default { refresh, init }
+
