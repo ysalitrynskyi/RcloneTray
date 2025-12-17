@@ -1,134 +1,78 @@
-/* gnu/linux styles */
-
-html {
-  background-color: transparent !important;
-}
+/* Linux specific styles */
 
 body {
-  color: #333333;
-  background: #dddddd;
-  font-size: 12px;
-  font-weight: normal;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
-}
-.dark body {
-  background: #333333;
-  color: #dddddd;
+  font-family: 'Ubuntu', 'Cantarell', 'DejaVu Sans', system-ui, sans-serif;
 }
 
-.dark a {
-  color: Highlight;
+/* GTK-like buttons */
+button,
+input[type="button"],
+input[type="submit"] {
+  border-radius: 4px;
+  font-weight: 500;
 }
 
-.row.buttons {
-  background: #00000010;
-  margin: 0;
-  padding: 1rem;
+button.secondary,
+.btn-secondary {
+  background: #f6f5f4;
+  border: 1px solid #cdc7c2;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.8);
 }
 
-select {
-  margin-top: 3px;
+button.secondary:hover,
+.btn-secondary:hover {
+  background: #edebe9;
 }
 
-fieldset,
-section {
-  border-radius: 5px;
-}
-
-input[type="checkbox"],
-input[type="radio"] {
-  transform: scale(1.21);
-}
-
-select,
+/* Input fields - GTK style */
 input:not([type="checkbox"]):not([type="radio"]),
-textarea {
-  -webkit-appearance: none;
-  border-radius: 2px;
-  padding: .4em .6em;
-  background: #ffffff;
-  border: 1px solid #bbbbbb;
-}
-
-.dark select,
-.dark input:not([type="checkbox"]):not([type="radio"]),
-.dark textarea {
-  background: #555555;
-  border: 1px solid #2a2a2a;
-  color: #dddddd;
-}
-
-button {
-  border: 1px solid #bbbbbb;
-  box-shadow: 1px 1px 1px -2px #000000;
-  background: #bbbbbb;
-  color: #333333;
-  border-radius: 3px;
-  padding: .4em .6em;
-}
-.dark button {
-  background: #555555;
-  border: 1px solid #2a2a2a;
-  color: #dddddd;
-}
-
-select,
-input:not([type="checkbox"]):not([type="radio"]):focus,
-textarea:focus {
-  outline-width: 2px;
-  outline-offset: -2px;
-  outline-color: Highlight;
-}
-
+textarea,
 select {
-  -webkit-appearance: menulist;
+  border-radius: 4px;
+  border: 1px solid #cdc7c2;
 }
 
-/* Tabs */
+input:not([type="checkbox"]):not([type="radio"]):focus,
+textarea:focus,
+select:focus {
+  border-color: #3584e4;
+  box-shadow: inset 0 0 0 1px #3584e4;
+}
+
+/* Tabs - GTK style */
 .tab-buttons {
-  border-top: 1px solid #bbbbbb;
+  background: #f6f5f4;
+  border-bottom: 1px solid #cdc7c2;
 }
-.tab-buttons > * {
-  padding: .3em 1em;
-  width: 100%;
-  background: rgba(0,0,0,.2);
-  border-bottom: 1px solid #aaaaaa;
-  text-align: center;
-}
-.tab-buttons > :hover {
-  background: rgba(0,0,0,.3);
-}
+
 .tab-buttons > .active {
-  border-left: 1px solid #aaaaaa;
-  border-right: 1px solid #aaaaaa;
-  border-bottom: none;
-  background: transparent;
-}
-.tab-buttons > .active:first-child {
-  border-left-width: 0;
-}
-.tab-buttons > .active:last-child {
-  border-right-width: 0;
-}
-.tab-content {
-  border-bottom: 1px solid #bbbbbb;
+  background: #3584e4;
 }
 
-.dark .tab-buttons {
-  border-top: 1px solid #444444;
-}
-.dark .tab-buttons > *:not(.active),
-.dark .tab-content {
-  border-bottom: 1px solid #444444;
-}
-.dark .tab-buttons .active {
-  border-left-color: #444444;
-}
-.dark .tab-buttons .active {
-  border-right-color: #444444;
-}
-
-/* Hacks */
-#preferences .tab-buttons {
-  border-top: 0;
+/* Dark mode (Adwaita Dark) */
+@media (prefers-color-scheme: dark) {
+  .tab-buttons {
+    background: #353535;
+    border-color: #1e1e1e;
+  }
+  
+  button.secondary,
+  .btn-secondary {
+    background: #454545;
+    border-color: #1e1e1e;
+    color: #f5f5f5;
+    box-shadow: none;
+  }
+  
+  button.secondary:hover,
+  .btn-secondary:hover {
+    background: #555555;
+  }
+  
+  input:not([type="checkbox"]):not([type="radio"]),
+  textarea,
+  select {
+    border-color: #1e1e1e;
+    background: #2d2d2d;
+  }
 }

@@ -1,42 +1,65 @@
-/* win32 stles */
+/* Windows specific styles */
 
-/* Input, Textarea, Select */
-input:not([type="checkbox"]):not([type="radio"]),
-select,
-textarea {
-  border-radius: 0;
-  border: 2px solid WindowFrame;
-  background: Window;
-  padding: .3em .6em;
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
 }
-button {
-  border-radius: 0;
-  border: 2px solid ButtonFace;
-  background: ButtonFace;
-  padding: .4em 1em;
+
+/* Windows-style buttons */
+button,
+input[type="button"],
+input[type="submit"] {
+  border-radius: 4px;
+  font-weight: 400;
 }
-input:not([type="checkbox"]):not([type="radio"]):focus,
-select:focus,
-button:focus,
-button:active,
-textarea:focus {
+
+button.secondary,
+.btn-secondary {
+  background: #f0f0f0;
+  border: 1px solid #adadad;
+}
+
+button.secondary:hover,
+.btn-secondary:hover {
+  background: #e5e5e5;
   border-color: #0078d4;
-  outline: none;
-  box-shadow: none;
 }
 
-/* Tabs */
-.tabs {
-  margin: 1rem;
+/* Windows focus styles */
+input:not([type="checkbox"]):not([type="radio"]):focus,
+textarea:focus,
+select:focus {
+  border-color: #0078d4;
+  box-shadow: none;
+  outline: 2px solid rgba(0, 120, 212, 0.3);
+  outline-offset: -2px;
 }
-.tab-buttons > :not(.active):hover {
-  outline: 1px solid ThreeDFace;
+
+/* Tabs - Windows style */
+.tab-buttons {
+  background: #f3f3f3;
+  border-bottom: 1px solid #e1e1e1;
 }
+
 .tab-buttons > .active {
   background: #0078d4;
-  color: Window;
 }
-.tab-content {
-  border: 1px solid ThreeDFace;
-  background: Window;
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  .tab-buttons {
+    background: #2d2d2d;
+    border-color: #3d3d3d;
+  }
+  
+  button.secondary,
+  .btn-secondary {
+    background: #3d3d3d;
+    border-color: #5d5d5d;
+    color: #f5f5f5;
+  }
+  
+  button.secondary:hover,
+  .btn-secondary:hover {
+    background: #4d4d4d;
+  }
 }

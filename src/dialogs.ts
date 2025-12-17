@@ -147,8 +147,9 @@ export function about(): void {
 export function preferences(): void {
   createNewDialog('Preferences', {
     $singleId: 1,
-    width: 600,
-    height: 300
+    width: 680,
+    height: 480,
+    resizable: true
   })
 }
 

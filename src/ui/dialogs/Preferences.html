@@ -1,31 +1,597 @@
 <!doctype html>
 <html>
+<head>
+  <title>Preferences</title>
+  <style>
+    :root {
+      --bg-primary: #fafafa;
+      --bg-secondary: #ffffff;
+      --bg-sidebar: #f0f0f0;
+      --bg-hover: #e8e8e8;
+      --bg-active: #007AFF;
+      --text-primary: #1a1a1a;
+      --text-secondary: #666666;
+      --text-active: #ffffff;
+      --border-color: #e0e0e0;
+      --accent: #007AFF;
+      --accent-hover: #0056b3;
+      --input-bg: #ffffff;
+      --input-border: #d1d1d1;
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    }
 
-  <head>
-    <title>RcloneTray Preferences</title>
-    <script defer>
-      $main.loadStyles()
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-primary: #1c1c1e;
+        --bg-secondary: #2c2c2e;
+        --bg-sidebar: #252527;
+        --bg-hover: #3a3a3c;
+        --bg-active: #0a84ff;
+        --text-primary: #f5f5f7;
+        --text-secondary: #98989d;
+        --text-active: #ffffff;
+        --border-color: #3a3a3c;
+        --accent: #0a84ff;
+        --accent-hover: #409cff;
+        --input-bg: #1c1c1e;
+        --input-border: #48484a;
+        --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+      }
+    }
 
-      document.addEventListener('DOMContentLoaded', async function () {
-        // Fetch all settings asynchronously
-        const [
-          isAutostart,
-          trayMenuShowType,
-          rcloneConfigFile,
-          rcloneUseBundled,
-          rcloneCacheFiles,
-          rcloneCacheDirectories,
-          customArgs,
-          rcloneNcduEnable,
-          rcloneSyncEnable,
-          rcloneSyncAutouploadDelay,
-          rcloneServingHttpEnable,
-          rcloneServingFtpEnable,
-          rcloneServingResticEnable,
-          rcloneServingWebdavEnable,
-          rcloneServingUsername,
-          rcloneServingPassword
-        ] = await Promise.all([
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+      font-size: 13px;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      height: 100%;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    .container {
+      display: flex;
+      height: 100%;
+      min-height: 380px;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 160px;
+      background: var(--bg-sidebar);
+      border-right: 1px solid var(--border-color);
+      padding: 12px 8px;
+      flex-shrink: 0;
+    }
+
+    .sidebar-item {
+      display: flex;
+      align-items: center;
+      padding: 8px 12px;
+      margin-bottom: 2px;
+      border-radius: 6px;
+      cursor: pointer;
+      color: var(--text-primary);
+      font-weight: 500;
+      transition: all 0.15s ease;
+    }
+
+    .sidebar-item:hover {
+      background: var(--bg-hover);
+    }
+
+    .sidebar-item.active {
+      background: var(--bg-active);
+      color: var(--text-active);
+    }
+
+    .sidebar-item svg {
+      width: 16px;
+      height: 16px;
+      margin-right: 8px;
+      opacity: 0.7;
+    }
+
+    .sidebar-item.active svg {
+      opacity: 1;
+    }
+
+    /* Content */
+    .content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-secondary);
+    }
+
+    .content-body {
+      flex: 1;
+      padding: 20px 24px;
+      overflow-y: auto;
+    }
+
+    .content-footer {
+      padding: 12px 24px;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      justify-content: flex-end;
+      background: var(--bg-secondary);
+    }
+
+    /* Panels */
+    .panel {
+      display: none;
+    }
+
+    .panel.active {
+      display: block;
+    }
+
+    .panel-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 20px;
+      color: var(--text-primary);
+    }
+
+    /* Form groups */
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-row {
+      display: flex;
+      align-items: flex-start;
+      margin-bottom: 16px;
+    }
+
+    .form-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .form-label {
+      width: 140px;
+      padding-top: 6px;
+      font-weight: 500;
+      color: var(--text-primary);
+      flex-shrink: 0;
+    }
+
+    .form-control {
+      flex: 1;
+    }
+
+    .form-help {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+      line-height: 1.4;
+    }
+
+    /* Inputs */
+    input[type="text"],
+    input[type="number"],
+    input[type="password"],
+    textarea,
+    select {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--input-border);
+      border-radius: 6px;
+      background: var(--input-bg);
+      color: var(--text-primary);
+      font-size: 13px;
+      font-family: inherit;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    input[type="text"]:focus,
+    input[type="number"]:focus,
+    input[type="password"]:focus,
+    textarea:focus,
+    select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+
+    select {
+      cursor: pointer;
+    }
+
+    /* Checkbox */
+    .checkbox-wrapper {
+      display: flex;
+      align-items: center;
+    }
+
+    .checkbox-wrapper input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      cursor: pointer;
+      accent-color: var(--accent);
+    }
+
+    .checkbox-label {
+      margin-left: 8px;
+      color: var(--text-secondary);
+      font-size: 12px;
+    }
+
+    /* Section */
+    .section {
+      background: var(--bg-primary);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+      border: 1px solid var(--border-color);
+    }
+
+    .section:last-child {
+      margin-bottom: 0;
+    }
+
+    .section-title {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+    }
+
+    /* Button */
+    .btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      border: none;
+      font-family: inherit;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+    }
+
+    .btn-secondary {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+    }
+
+    .btn-secondary:hover {
+      background: var(--border-color);
+    }
+
+    /* File input wrapper */
+    .file-input-wrapper {
+      display: flex;
+      gap: 8px;
+    }
+
+    .file-input-wrapper input {
+      flex: 1;
+    }
+
+    .file-input-wrapper .btn {
+      padding: 8px 12px;
+      white-space: nowrap;
+    }
+
+    /* Loading state */
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-secondary);
+    }
+
+    .loading::after {
+      content: '';
+      width: 20px;
+      height: 20px;
+      border: 2px solid var(--border-color);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-left: 8px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Error state */
+    .error {
+      color: #ff3b30;
+      padding: 20px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="loading">Loading preferences...</div>
+  
+  <form id="preferences-form" class="container" style="display: none;">
+    <nav class="sidebar">
+      <div class="sidebar-item active" data-panel="general">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        General
+      </div>
+      <div class="sidebar-item" data-panel="rclone">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="16 18 22 12 16 6"/>
+          <polyline points="8 6 2 12 8 18"/>
+        </svg>
+        Rclone
+      </div>
+      <div class="sidebar-item" data-panel="sync">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="23 4 23 10 17 10"/>
+          <polyline points="1 20 1 14 7 14"/>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>
+        Sync
+      </div>
+      <div class="sidebar-item" data-panel="serving">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
+          <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+          <line x1="6" y1="6" x2="6.01" y2="6"/>
+          <line x1="6" y1="18" x2="6.01" y2="18"/>
+        </svg>
+        Serving
+      </div>
+    </nav>
+
+    <main class="content">
+      <div class="content-body">
+        <!-- General Panel -->
+        <div id="panel-general" class="panel active">
+          <h2 class="panel-title">General</h2>
+          
+          <div class="section">
+            <div class="section-title">Startup</div>
+            <div class="form-row">
+              <label class="form-label">Launch at login</label>
+              <div class="form-control">
+                <div class="checkbox-wrapper">
+                  <input type="checkbox" name="auto_start" id="auto_start">
+                  <span class="checkbox-label">Start RcloneTray when you log in</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Appearance</div>
+            <div class="form-row">
+              <label class="form-label">Show type in menu</label>
+              <div class="form-control">
+                <div class="checkbox-wrapper">
+                  <input type="checkbox" name="tray_menu_show_type" id="tray_menu_show_type">
+                  <span class="checkbox-label">Display bookmark type in tray menu</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Rclone Panel -->
+        <div id="panel-rclone" class="panel">
+          <h2 class="panel-title">Rclone</h2>
+          
+          <div class="section">
+            <div class="section-title">Configuration</div>
+            <div class="form-row">
+              <label class="form-label">Config file</label>
+              <div class="form-control">
+                <div class="file-input-wrapper">
+                  <input type="text" name="rclone_config" id="rclone_config" readonly>
+                  <button type="button" class="btn btn-secondary" id="browse-config">Browse</button>
+                </div>
+                <div class="form-help">Requires restart to take effect</div>
+              </div>
+            </div>
+            <div class="form-row">
+              <label class="form-label">Use bundled</label>
+              <div class="form-control">
+                <div class="checkbox-wrapper">
+                  <input type="checkbox" name="rclone_use_bundled" id="rclone_use_bundled">
+                  <span class="checkbox-label">Use bundled Rclone binary</span>
+                </div>
+                <div class="form-help">If disabled, system-wide Rclone will be used. Requires restart.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Cache</div>
+            <div class="form-row">
+              <label class="form-label">File cache (sec)</label>
+              <div class="form-control">
+                <input type="number" name="rclone_cache_files" id="rclone_cache_files" min="0" max="3600">
+              </div>
+            </div>
+            <div class="form-row">
+              <label class="form-label">Dir cache (sec)</label>
+              <div class="form-control">
+                <input type="number" name="rclone_cache_directories" id="rclone_cache_directories" min="0" max="3600">
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Advanced</div>
+            <div class="form-row">
+              <label class="form-label">Custom args</label>
+              <div class="form-control">
+                <textarea name="custom_args" id="custom_args" placeholder="e.g. --vfs-cache-mode full"></textarea>
+                <div class="form-help">Space or newline separated rclone arguments. Check rclone.org/docs for options.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sync Panel -->
+        <div id="panel-sync" class="panel">
+          <h2 class="panel-title">Sync / Upload / Download</h2>
+          
+          <div class="section">
+            <div class="section-title">Features</div>
+            <div class="form-row">
+              <label class="form-label">Enable NCDU</label>
+              <div class="form-control">
+                <div class="checkbox-wrapper">
+                  <input type="checkbox" name="rclone_ncdu_enable" id="rclone_ncdu_enable">
+                  <span class="checkbox-label">Show NCDU (disk usage) in menu</span>
+                </div>
+              </div>
+            </div>
+            <div class="form-row">
+              <label class="form-label">Enable Sync</label>
+              <div class="form-control">
+                <div class="checkbox-wrapper">
+                  <input type="checkbox" name="rclone_sync_enable" id="rclone_sync_enable">
+                  <span class="checkbox-label">Show sync options in menu</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Auto Upload</div>
+            <div class="form-row">
+              <label class="form-label">Upload delay</label>
+              <div class="form-control">
+                <select name="rclone_sync_autoupload_delay" id="rclone_sync_autoupload_delay">
+                  <option value="1">1 second</option>
+                  <option value="3">3 seconds</option>
+                  <option value="5">5 seconds</option>
+                  <option value="7">7 seconds</option>
+                  <option value="10">10 seconds</option>
+                  <option value="15">15 seconds</option>
+                </select>
+                <div class="form-help">Delay before automatic upload starts after file changes</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Serving Panel -->
+        <div id="panel-serving" class="panel">
+          <h2 class="panel-title">Serving</h2>
+          
+          <div class="section">
+            <div class="section-title">Protocols</div>
+            <div class="form-row">
+              <label class="form-label">HTTP</label>
+              <div class="form-control">
+                <div class="checkbox-wrapper">
+                  <input type="checkbox" name="rclone_serving_http_enable" id="rclone_serving_http_enable">
+                  <span class="checkbox-label">Enable HTTP server</span>
+                </div>
+              </div>
+            </div>
+            <div class="form-row">
+              <label class="form-label">FTP</label>
+              <div class="form-control">
+                <div class="checkbox-wrapper">
+                  <input type="checkbox" name="rclone_serving_ftp_enable" id="rclone_serving_ftp_enable">
+                  <span class="checkbox-label">Enable FTP server</span>
+                </div>
+              </div>
+            </div>
+            <div class="form-row">
+              <label class="form-label">WebDAV</label>
+              <div class="form-control">
+                <div class="checkbox-wrapper">
+                  <input type="checkbox" name="rclone_serving_webdav_enable" id="rclone_serving_webdav_enable">
+                  <span class="checkbox-label">Enable WebDAV server</span>
+                </div>
+              </div>
+            </div>
+            <div class="form-row">
+              <label class="form-label">Restic</label>
+              <div class="form-control">
+                <div class="checkbox-wrapper">
+                  <input type="checkbox" name="rclone_serving_restic_enable" id="rclone_serving_restic_enable">
+                  <span class="checkbox-label">Enable Restic server</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Authentication</div>
+            <div class="form-row">
+              <label class="form-label">Username</label>
+              <div class="form-control">
+                <input type="text" name="rclone_serving_username" id="rclone_serving_username" autocomplete="off">
+                <div class="form-help">Default username for serving authentication</div>
+              </div>
+            </div>
+            <div class="form-row">
+              <label class="form-label">Password</label>
+              <div class="form-control">
+                <input type="password" name="rclone_serving_password" id="rclone_serving_password" autocomplete="off">
+                <div class="form-help">Default password for serving authentication</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="content-footer">
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </main>
+  </form>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', async function() {
+      const loadingEl = document.getElementById('loading');
+      const formEl = document.getElementById('preferences-form');
+      
+      // Helper to safely set element properties
+      function setField(id, prop, value) {
+        const el = document.getElementById(id);
+        if (el) el[prop] = value;
+      }
+
+      // Check if preload APIs are available
+      if (typeof $main === 'undefined') {
+        loadingEl.innerHTML = '<div class="error">Error: Preload script not loaded.</div>';
+        return;
+      }
+
+      try {
+        // Load settings in parallel
+        const results = await Promise.all([
           $main.isAutostart(),
           $main.getSetting('tray_menu_show_type'),
           $main.rclone.getConfigFile(),
@@ -42,233 +608,107 @@
           $main.getSetting('rclone_serving_webdav_enable'),
           $main.getSetting('rclone_serving_username'),
           $main.getSetting('rclone_serving_password')
-        ])
+        ]);
 
-        let tabs = window.htmlElements.createTabsElement()
-        document.getElementById('preferences').appendChild(tabs)
+        const [
+          isAutostart, trayMenuShowType, rcloneConfigFile, rcloneUseBundled,
+          rcloneCacheFiles, rcloneCacheDirectories, customArgs,
+          rcloneNcduEnable, rcloneSyncEnable, rcloneSyncAutouploadDelay,
+          rcloneServingHttpEnable, rcloneServingFtpEnable,
+          rcloneServingResticEnable, rcloneServingWebdavEnable,
+          rcloneServingUsername, rcloneServingPassword
+        ] = results;
 
-        tabs.addTab('General', window.htmlElements.createOptionsFields([
-          {
-            $Label: 'Auto launch',
-            $Type: 'boolean',
-            Name: 'auto_start',
-            Help: 'Automatically launch the app during user login',
-            Provider: '',
-            Default: false,
-            Value: isAutostart,
-            ShortOpt: '',
-            Hide: 0,
-            Required: false,
-            IsPassword: false,
-            NoPrefix: false,
-            Advanced: false
-          },
-          {
-            $Label: 'Show bookmarks type',
-            $Type: 'boolean',
-            Name: 'tray_menu_show_type',
-            Help: '',
-            Provider: '',
-            Default: true,
-            Value: trayMenuShowType,
-            ShortOpt: '',
-            Hide: 0,
-            Required: false,
-            IsPassword: false,
-            NoPrefix: false,
-            Advanced: false
+        // Populate form fields
+        setField('auto_start', 'checked', !!isAutostart);
+        setField('tray_menu_show_type', 'checked', trayMenuShowType !== false);
+        setField('rclone_config', 'value', rcloneConfigFile || '');
+        setField('rclone_use_bundled', 'checked', rcloneUseBundled !== false);
+        setField('rclone_cache_files', 'value', rcloneCacheFiles || 5);
+        setField('rclone_cache_directories', 'value', rcloneCacheDirectories || 5);
+        setField('custom_args', 'value', customArgs || '');
+        setField('rclone_ncdu_enable', 'checked', !!rcloneNcduEnable);
+        setField('rclone_sync_enable', 'checked', !!rcloneSyncEnable);
+        setField('rclone_sync_autoupload_delay', 'value', rcloneSyncAutouploadDelay || 3);
+        setField('rclone_serving_http_enable', 'checked', !!rcloneServingHttpEnable);
+        setField('rclone_serving_ftp_enable', 'checked', !!rcloneServingFtpEnable);
+        setField('rclone_serving_webdav_enable', 'checked', !!rcloneServingWebdavEnable);
+        setField('rclone_serving_restic_enable', 'checked', !!rcloneServingResticEnable);
+        setField('rclone_serving_username', 'value', rcloneServingUsername || '');
+        setField('rclone_serving_password', 'value', rcloneServingPassword || '');
+
+        // Show form, hide loading
+        loadingEl.style.display = 'none';
+        formEl.style.display = 'flex';
+
+        // Tab navigation
+        document.querySelectorAll('.sidebar-item').forEach(item => {
+          item.addEventListener('click', function() {
+            const panelId = this.dataset.panel;
+            document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+            this.classList.add('active');
+            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+            document.getElementById('panel-' + panelId)?.classList.add('active');
+          });
+        });
+
+        // Browse config file
+        document.getElementById('browse-config')?.addEventListener('click', async function() {
+          const selected = await window.electronAPI.selectFile();
+          if (selected && selected.length > 0) {
+            setField('rclone_config', 'value', selected[0]);
           }
-        ]))
+        });
 
-        tabs.addTab('Rclone', window.htmlElements.createOptionsFields([
-          {
-            Name: 'rclone_config',
-            $Label: 'Config',
-            $Type: 'file',
-            $RequireRestart: true,
-            Help: 'Changing this option require restart.',
-            Provider: '',
-            Default: rcloneConfigFile,
-            Value: '',
-            ShortOpt: '',
-            Hide: 0,
-            Required: false,
-            IsPassword: false,
-            NoPrefix: false,
-            Advanced: false
-          },
-          {
-            Name: 'rclone_use_bundled',
-            $Label: 'Use bundled Rclone',
-            $Type: 'boolean',
-            $RequireRestart: true,
-            Help: 'Use the Rclone binary that is bundled with the app, otherwise installed system wide version will be used (if not found, then you will receive and error).',
-            Provider: '',
-            Default: true,
-            Value: rcloneUseBundled,
-            ShortOpt: '',
-            Hide: 0,
-            Required: false,
-            IsPassword: false,
-            NoPrefix: false,
-            Advanced: false
-          },
-          {
-            Name: 'rclone_cache_files',
-            $Label: 'File cache time',
-            $Type: 'numeric',
-            Help: 'In seconds',
-            Value: rcloneCacheFiles
-          },
-          {
-            Name: 'rclone_cache_directories',
-            $Label: 'Directory cache time',
-            $Type: 'numeric',
-            Help: 'In seconds',
-            Value: rcloneCacheDirectories
-          },
-          {
-            Name: 'custom_args',
-            $Label: 'Custom Rclone setting args.',
-            $Type: 'text',
-            Help: 'Space or new-line separated rclone command arguments to be appended to all commands.\nCheck more at https://rclone.org/docs/',
-            Value: customArgs,
-            ShortOpt: '',
-            Hide: 0,
-            Required: false,
-            IsPassword: false,
-            NoPrefix: false,
-            Advanced: false
-          }
-        ]))
+        // Track fields that require restart
+        let requiresRestart = false;
+        ['rclone_config', 'rclone_use_bundled', 'rclone_sync_autoupload_delay'].forEach(id => {
+          document.getElementById(id)?.addEventListener('change', () => { requiresRestart = true; });
+        });
 
-        tabs.addTab('NCDU', window.htmlElements.createOptionsFields([
-          {
-            $Label: 'Enable',
-            $Type: 'boolean',
-            Name: 'rclone_ncdu_enable',
-            Value: rcloneNcduEnable
-          }
-        ]))
-
-        tabs.addTab('Upload/Download', window.htmlElements.createOptionsFields([
-          {
-            $Label: 'Enable',
-            $Type: 'boolean',
-            Name: 'rclone_sync_enable',
-            Value: rcloneSyncEnable
-          },
-          {
-            $Label: 'Automatic Upload Delay',
-            $Type: 'select',
-            Name: 'rclone_sync_autoupload_delay',
-            Examples: [
-              {
-                Label: '1s',
-                Value: 1
-              },
-              {
-                Label: '3s',
-                Value: 3
-              },
-              {
-                Label: '5s',
-                Value: 5
-              },
-              {
-                Label: '7s',
-                Value: 7
-              },
-              {
-                Label: '10s',
-                Value: 10
-              },
-              {
-                Label: '15s',
-                Value: 15
-              }
-            ],
-            Value: rcloneSyncAutouploadDelay,
-            $RequireRestart: true,
-            Help: 'Need restart to take effect.'
-          }
-        ]))
-
-        tabs.addTab('Serving', window.htmlElements.createOptionsFields([
-          {
-            $Label: 'Enable HTTP',
-            $Type: 'boolean',
-            Name: 'rclone_serving_http_enable',
-            Value: rcloneServingHttpEnable
-          },
-          {
-            $Label: 'Enable FTP',
-            $Type: 'boolean',
-            Name: 'rclone_serving_ftp_enable',
-            Value: rcloneServingFtpEnable
-          },
-          {
-            $Label: 'Enable Restic',
-            $Type: 'boolean',
-            Name: 'rclone_serving_restic_enable',
-            Value: rcloneServingResticEnable
-          },
-          {
-            $Label: 'Enable WebDAV',
-            $Type: 'boolean',
-            Name: 'rclone_serving_webdav_enable',
-            Value: rcloneServingWebdavEnable
-          },
-          {
-            $Label: 'Default username',
-            $Type: 'string',
-            Name: 'rclone_serving_username',
-            Value: rcloneServingUsername
-          },
-          {
-            $Label: 'Default password',
-            $Type: 'password',
-            Name: 'rclone_serving_password',
-            Value: rcloneServingPassword
-          }
-        ]))
-
-        window.electronAPI.resizeToContent()
-
-        let theForm = document.getElementById('the-form')
-        theForm.addEventListener('submit', async function (event) {
-          event.preventDefault()
-          let data = window.electronAPI.getTheFormData(this)
-
-          let oldAutoStart = await $main.isAutostart()
-          if (oldAutoStart !== !!(data.auto_start || false)) {
-            $main.setAutostart(data.auto_start || false)
-          }
-          delete data['auto_start']
-
-          await $main.settingsMerge(data)
-          $main.refreshTray()
+        // Form submission
+        formEl.addEventListener('submit', async function(event) {
+          event.preventDefault();
+          const data = {};
           
-          if (window.requireRestart) {
-            window.htmlElements.checkForRequiredRestart()
-          } else {
-            window.close()
+          // Collect checkbox values
+          this.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+            if (cb.name) data[cb.name] = cb.checked;
+          });
+
+          // Collect other inputs
+          this.querySelectorAll('input:not([type="checkbox"]), textarea, select').forEach(input => {
+            if (input.name) data[input.name] = input.value;
+          });
+
+          // Handle autostart separately
+          const oldAutoStart = await $main.isAutostart();
+          if (oldAutoStart !== data.auto_start) {
+            $main.setAutostart(data.auto_start);
           }
-        })
+          delete data.auto_start;
 
-      });
-    </script>
-  </head>
+          // Save settings
+          await $main.settingsMerge(data);
+          $main.refreshTray();
 
-  <body>
-    <form id="the-form">
-      <div id="preferences"></div>
-      <div class="row right buttons">
-        <button type="submit">
-          Save
-        </button>
-      </div>
-    </form>
-  </body>
+          if (requiresRestart) {
+            const shouldRestart = await window.electronAPI.confirm('Some changes require a restart. Restart now?');
+            if (shouldRestart) {
+              window.htmlElements.checkForRequiredRestart();
+            } else {
+              window.close();
+            }
+          } else {
+            window.close();
+          }
+        });
 
+      } catch (error) {
+        console.error('Failed to load preferences:', error);
+        loadingEl.innerHTML = '<div class="error">Failed to load preferences:<br>' + (error.message || error) + '</div>';
+      }
+    });
+  </script>
+</body>
 </html>

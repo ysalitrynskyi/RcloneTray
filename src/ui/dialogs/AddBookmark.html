@@ -1,119 +1,172 @@
 <!doctype html>
 <html>
+<head>
+  <title>New Bookmark</title>
+  <script defer>
+    $main.loadStyles()
+  </script>
+  <style>
+    body {
+      padding: 0;
+    }
+    
+    .header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-color, #e0e0e0);
+      background: var(--bg-primary, #fafafa);
+    }
+    
+    .header h1 {
+      font-size: 15px;
+      font-weight: 600;
+      margin: 0 0 12px 0;
+      color: var(--text-primary, #1a1a1a);
+    }
+    
+    .header select {
+      width: 100%;
+    }
+    
+    .form-body {
+      padding: 16px 20px;
+    }
+    
+    .form-group {
+      margin-bottom: 16px;
+    }
+    
+    .form-group:last-child {
+      margin-bottom: 0;
+    }
+    
+    .form-label {
+      display: block;
+      font-weight: 500;
+      margin-bottom: 6px;
+      color: var(--text-primary, #1a1a1a);
+    }
+    
+    .form-label small {
+      font-weight: 400;
+      color: var(--text-secondary, #666);
+      margin-left: 4px;
+    }
+    
+    #provider-settings-wrapper {
+      display: none;
+    }
+    
+    #bookmark-settings {
+      margin-top: 16px;
+    }
+    
+    .form-footer {
+      padding: 12px 20px;
+      border-top: 1px solid var(--border-color, #e0e0e0);
+      display: flex;
+      justify-content: flex-end;
+      background: var(--bg-primary, #fafafa);
+    }
+    
+    @media (prefers-color-scheme: dark) {
+      .header {
+        background: var(--bg-primary, #1c1c1e);
+        border-color: var(--border-color, #3a3a3c);
+      }
+      .form-footer {
+        background: var(--bg-primary, #1c1c1e);
+        border-color: var(--border-color, #3a3a3c);
+      }
+    }
+  </style>
+</head>
+<body>
+  <form id="the-form">
+    <div class="header">
+      <h1>Create New Bookmark</h1>
+      <select name="type" id="providers-list">
+        <option value="">— Select Provider —</option>
+      </select>
+    </div>
 
-  <head>
-    <script defer>
-      $main.loadStyles()
+    <div id="provider-settings-wrapper">
+      <div class="form-body">
+        <div class="form-group">
+          <label class="form-label">
+            Name <small>(required)</small>
+          </label>
+          <input type="text" name="name" id="bookmark-name" maxlength="20" placeholder="My Cloud Storage" required>
+        </div>
+        
+        <div id="bookmark-settings"></div>
+      </div>
 
-      /**
-       * Add available providers as options to select HTML element
-       * @param {HTMLSelectElement} selectElement
-       * @param {Object} providers
-       */
-      window.renderAvailableProvidersSelectOptions = function (selectElement, providers) {
-        let optionsContainer = document.createDocumentFragment()
-        let emptyOption = document.createElement('option')
-        emptyOption.value = ''
-        emptyOption.innerHTML = '&mdash; Select Provider &mdash;'
-        optionsContainer.appendChild(emptyOption)
+      <div class="form-footer">
+        <button type="submit">Create Bookmark</button>
+      </div>
+    </div>
+  </form>
 
-        for (let providerName in providers) {
-          let option = document.createElement('option')
-          option.value = providerName
-          option.innerText = providers[providerName].Description
-          option.providerObject = providers[providerName]
-          optionsContainer.appendChild(option)
+  <script>
+    (async function() {
+      const theForm = document.getElementById('the-form');
+      const providerSettingsWrapper = document.getElementById('provider-settings-wrapper');
+      const bookmarkSettingsWrapper = document.getElementById('bookmark-settings');
+      const providersListSelect = document.getElementById('providers-list');
+
+      try {
+        // Fetch providers
+        const providers = await $main.rclone.providers();
+        
+        // Populate select options
+        for (const providerName in providers) {
+          const option = document.createElement('option');
+          option.value = providerName;
+          option.textContent = providers[providerName].Description;
+          option.providerObject = providers[providerName];
+          providersListSelect.appendChild(option);
         }
 
-        let range = document.createRange()
-        range.selectNodeContents(selectElement)
-        range.deleteContents()
-        selectElement.appendChild(optionsContainer)
-      }
-
-      document.addEventListener('DOMContentLoaded', async function () {
-        const theForm = document.getElementById('the-form')
-        const providerSettingsWrapper = document.getElementById('provider-settings-wrapper')
-        const bookmarkSettingsWrapper = document.getElementById('bookmark-settings')
-
-        // Fetch providers asynchronously
-        const providers = await $main.rclone.providers()
-
-        const providersListSelect = document.getElementById('providers-list')
-        providersListSelect.addEventListener('change', function () {
-          if (this.selectedOptions.length > 0 && this.selectedOptions[0].providerObject) {
-            let provider = this.selectedOptions[0].providerObject
-            document.title = `Create new ${provider.Name} Bookmark (${provider.Description})`
-            window.api.renderBookmarkSettings(bookmarkSettingsWrapper, this.value)
-            providerSettingsWrapper.style.display = null
+        // Handle provider selection
+        providersListSelect.addEventListener('change', function() {
+          const selectedOption = this.selectedOptions[0];
+          
+          if (selectedOption && selectedOption.providerObject) {
+            const provider = selectedOption.providerObject;
+            document.title = `New ${provider.Name} Bookmark`;
+            window.api.renderBookmarkSettings(bookmarkSettingsWrapper, this.value);
+            providerSettingsWrapper.style.display = 'block';
           } else {
-            document.title = 'Create new Bookmark'
-            providerSettingsWrapper.style.display = 'none'
-            bookmarkSettingsWrapper.innerHTML = ''
+            document.title = 'New Bookmark';
+            providerSettingsWrapper.style.display = 'none';
+            bookmarkSettingsWrapper.innerHTML = '';
           }
-          window.electronAPI.resizeToContent()
-        })
+          
+          window.electronAPI.resizeToContent();
+        });
 
-        renderAvailableProvidersSelectOptions(providersListSelect, providers)
-        providersListSelect.dispatchEvent(new Event('change'))
+        // Trigger initial resize
+        window.electronAPI.resizeToContent();
 
-        theForm.addEventListener('submit', async function (event) {
-          event.preventDefault()
+        // Handle form submission
+        theForm.addEventListener('submit', async function(event) {
+          event.preventDefault();
 
-          let data = window.electronAPI.getTheFormData(this)
+          const data = window.electronAPI.getTheFormData(this);
 
           try {
-            await $main.rclone.addBookmark(data.type, data.name, data.options)
-            window.close()
+            await $main.rclone.addBookmark(data.type, data.name, data.options || {});
+            window.close();
           } catch (error) {
-            window.electronAPI.errorBox(error.message || error)
+            window.electronAPI.errorBox(error.message || String(error));
           }
-        })
-      });
-    </script>
-  </head>
-
-  <body>
-
-    <form id="the-form">
-
-      <div class="row">
-        <div class="cell-left">
-          Connection Type
-        </div>
-        <div class="cell-right">
-          <select name="type" id="providers-list" style="width:20em;"></select>
-        </div>
-      </div>
-
-      <div id="provider-settings-wrapper">
-
-        <div class="row">
-          <div class="cell-left">
-            <label>
-              Name
-            </label>
-            <div class="label-required">
-              required
-            </div>
-          </div>
-          <div class="cell-right">
-            <input type="text" name="name" value="" maxlength="20" size="20" style="width:12em" />
-          </div>
-        </div>
-
-        <div id="bookmark-settings"></div>
-
-        <div class="row right buttons">
-          <button type="submit">
-            Add
-          </button>
-        </div>
-
-      </div>
-
-    </form>
-
-  </body>
-
+        });
+        
+      } catch (error) {
+        console.error('Failed to load providers:', error);
+        window.electronAPI.errorBox('Failed to load providers: ' + (error.message || error));
+      }
+    })();
+  </script>
+</body>
 </html>

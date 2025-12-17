@@ -1,70 +1,69 @@
 <!doctype html>
 <html class="transparent">
-
 <head>
-  <title>RcloneTray About</title>
-
+  <title>About RcloneTray</title>
   <script defer>
     $main.loadAboutStyles();
   </script>
 </head>
+<body>
+  <main>
+    <div class="content">
+      <img src="../icons/source-icon-color.png" width="72" height="72" alt="RcloneTray" class="icon">
+      
+      <div class="text-group">
+        <a href="https://github.com/ysalitrynskyi/RcloneTray" target="_blank">
+          <strong id="app-name"></strong>
+        </a>
+        <div id="app-version">
+          <span id="app-version-prefix">v</span><span id="app-version-content"></span>
+        </div>
+      </div>
 
-<body style="min-height: 440px">
-
-<main>
-
-  <div class="content">
-    <img src="../icons/source-icon-color.png" width="78" height="78" alt="Icon" class="icon">
-
-    <div class="text-group">
-      <a href="https://github.com/ysalitrynskyi/RcloneTray" target="_blank">
-        <strong id="app-name"></strong>
-      </a>
-      <div id="app-version"><span id="app-version-prefix">v</span><span id="app-version-content"></span></div>
-      <div>
-        by Yevhen Salitrynskyi
-        <br>
-        (based on Adrian Dimitrov's work)
+      <div class="text-group">
+        <a href="https://rclone.org/" target="_blank">
+          <strong>Rclone</strong>
+        </a>
+        <div id="rclone-version"></div>
       </div>
     </div>
 
-    <div class="text-group">
-      <a href="https://rclone.org/" target="_blank">
-        <strong>Rclone</strong>
-      </a>
-      <div id="rclone-version"></div>
-      <div>by Nick Craig-Wood</div>
+    <div class="button-group">
+      <button onclick="window.open('https://github.com/ysalitrynskyi/RcloneTray/releases')">
+        Check for Updates
+      </button>
+      <button onclick="window.open('https://github.com/ysalitrynskyi/RcloneTray/issues')">
+        Report Issue
+      </button>
+      <button onclick="window.open('https://raw.githubusercontent.com/ysalitrynskyi/RcloneTray/master/LICENSE.txt')">
+        View License
+      </button>
     </div>
-  </div>
 
-  <div class="button-group">
-    <button onclick="window.open('https://github.com/ysalitrynskyi/RcloneTray/issues')">Report Issue</button>
-    <button onclick="window.open('https://github.com/ysalitrynskyi/RcloneTray/releases')">Releases</button>
-    <button onclick="window.open('https://raw.githubusercontent.com/ysalitrynskyi/RcloneTray/master/LICENSE.txt')">License Notes</button>
-  </div>
+    <div class="credits">
+      Created by <a href="https://github.com/ysalitrynskyi" target="_blank">Yevhen Salitrynskyi</a><br>
+      Based on work by <a href="https://github.com/dimitrov-adrian" target="_blank">Adrian Dimitrov</a>
+    </div>
+  </main>
 
-</main>
-
-<script>
-  function setTextContent(id, textOrPromise) {
-    if (textOrPromise instanceof Promise) {
-      // Handle promise
-      textOrPromise.then(text => {
-        document.getElementById(id).textContent = text;
-      }).catch(error => {
-        console.error(`Error setting text content for ${id}:`, error);
-      });
-    } else {
-      // Handle direct value
-      document.getElementById(id).textContent = textOrPromise;
+  <script>
+    async function init() {
+      try {
+        const [appName, appVersion, rcloneVersion] = await Promise.all([
+          $main.app.getName(),
+          $main.app.getVersion(),
+          $main.rclone.version()
+        ]);
+        
+        document.getElementById('app-name').textContent = appName || 'RcloneTray';
+        document.getElementById('app-version-content').textContent = appVersion || '?';
+        document.getElementById('rclone-version').textContent = rcloneVersion || 'Not found';
+      } catch (error) {
+        console.error('Failed to load app info:', error);
+      }
     }
-  }
-
-  setTextContent('app-name', $main.app.getName());
-  setTextContent('app-version-content', $main.app.getVersion());
-  setTextContent('rclone-version', $main.rclone.version());
-</script>
-
+    
+    init();
+  </script>
 </body>
-
 </html>
