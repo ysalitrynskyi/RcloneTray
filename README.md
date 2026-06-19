@@ -188,7 +188,12 @@ npm run publish
 
 ## 📋 Changelog
 
-### v1.4.1 (Latest)
+### v1.4.2 (Latest)
+- **Adding a remote works reliably** - new bookmarks (e.g. S3) now show up in the tray immediately instead of silently doing nothing
+- **Brand icon restored & modernized** - the cloud + "R" on the classic blue→green→yellow gradient, in a clean squircle with real transparency
+- **Bigger, nicer Preferences window** and **working About buttons** (Report an issue / License / version)
+
+### v1.4.1
 - **Redesigned dialogs** - Add Remote, Edit Bookmark and About rebuilt with a refined, native look (fixes broken serif fonts, clipped content, and the see-through About window)
 - **Cleaner app icon** - removed a white plate that peeked out behind the icon's rounded corners
 

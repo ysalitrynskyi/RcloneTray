@@ -146,8 +146,10 @@ export function about(): void {
 export function preferences(): void {
   createNewDialog('Preferences', {
     $singleId: 1,
-    width: 680,
-    height: 480,
+    width: 840,
+    height: 620,
+    minWidth: 720,
+    minHeight: 520,
     resizable: true
   })
 }

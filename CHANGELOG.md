@@ -5,6 +5,29 @@ All notable changes to RcloneTray will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2] - 2026-06-19
+
+### Fixed
+- **New bookmark now appears immediately.** Adding a remote (e.g. S3) no longer
+  silently does nothing — the tray menu and in-memory cache are refreshed right
+  after create/update/delete instead of relying on a sometimes-missed config file
+  watcher.
+- **Provider settings can no longer get stuck on just the Name field.** If a
+  provider's option data fails to load, the form now shows a clear error instead of
+  an empty form, and the main process always replies to the request.
+- **About window buttons work again.** "Report an issue" and "License" (and the
+  version pill) previously triggered infinite recursion via a shadowed global
+  `open()` and did nothing; they now open in the default browser reliably.
+
+### Changed
+- **New app icon.** Restored the brand identity — a cloud with the "R", on the
+  classic blue→green→yellow gradient in a clean modern squircle with real
+  transparency (no stray white/checkerboard plate behind the rounded corners).
+  Applied across macOS (.icns), Windows (.ico), Linux/app (.png), the colored
+  tray icons, and the About window.
+- **Larger, more polished Preferences window** (840×620, resizable) with a wider
+  sidebar, section subtitles, bigger titles, and a footer with Cancel + Save.
+
 ## [1.4.1] - 2026-06-19
 
 ### Changed

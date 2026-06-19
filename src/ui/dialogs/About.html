@@ -39,10 +39,11 @@
   </main>
 
   <script>
-    function open(url) { window.open(url); }
-    document.getElementById('btn-updates').addEventListener('click', () => open('https://github.com/ysalitrynskyi/RcloneTray/releases'));
-    document.getElementById('btn-issue').addEventListener('click', () => open('https://github.com/ysalitrynskyi/RcloneTray/issues'));
-    document.getElementById('btn-license').addEventListener('click', () => open('https://raw.githubusercontent.com/ysalitrynskyi/RcloneTray/master/LICENSE.txt'));
+    function openUrl(url) { window.open(url, '_blank', 'noopener'); }
+    document.getElementById('btn-updates').addEventListener('click', () => openUrl('https://github.com/ysalitrynskyi/RcloneTray/releases'));
+    document.getElementById('btn-issue').addEventListener('click', () => openUrl('https://github.com/ysalitrynskyi/RcloneTray/issues'));
+    document.getElementById('btn-license').addEventListener('click', () => openUrl('https://github.com/ysalitrynskyi/RcloneTray/blob/master/LICENSE.txt'));
+    document.getElementById('app-version-link').addEventListener('click', (e) => { e.preventDefault(); openUrl('https://github.com/ysalitrynskyi/RcloneTray/releases'); });
 
     (async function init() {
       try {

@@ -52,8 +52,15 @@ ipcMain.handle('get-rclone-get-config-file', () => {
 })
 
 ipcMain.on('get-provider-data', (event: IpcMainEvent, providerName: string) => {
-  const provider = rclone.getProvider(providerName)
-  event.reply('provider-data-reply', provider)
+  try {
+    const provider = rclone.getProvider(providerName)
+    event.reply('provider-data-reply', provider)
+  } catch (error) {
+    console.error('get-provider-data failed:', error)
+    // Always reply so the renderer can stop waiting and show a useful message
+    // instead of an empty form with only the Name field.
+    event.reply('provider-data-reply', null)
+  }
 })
 
 ipcMain.handle('rclone-get-config', async () => {

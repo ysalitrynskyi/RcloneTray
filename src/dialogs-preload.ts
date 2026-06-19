@@ -492,7 +492,25 @@ contextBridge.exposeInMainWorld('api', {
     }
 
     // Send an IPC message to the main process to retrieve the provider data
-    ipcRenderer.once('provider-data-reply', (_event, provider: ProviderData) => {
+    ipcRenderer.once('provider-data-reply', (_event, provider: ProviderData | null) => {
+      const placeholderEl = typeof placeholderOrId === 'string'
+        ? document.getElementById(placeholderOrId)
+        : placeholderOrId
+
+      if (!provider || !Array.isArray(provider.Options)) {
+        if (placeholderEl) {
+          const range = document.createRange()
+          range.selectNodeContents(placeholderEl)
+          range.deleteContents()
+          const msg = document.createElement('div')
+          msg.style.cssText = 'padding:20px;color:#ff3b30;font-size:12px;'
+          msg.textContent = 'Could not load settings for this provider. Please try again.'
+          placeholderEl.appendChild(msg)
+          window.electronAPI.resizeToContent()
+        }
+        return
+      }
+
       const connectionFields = provider.Options.filter((item) => {
         return item.Name !== '_rclonetray_local_path_map' && item.Advanced !== true
       })

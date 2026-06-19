@@ -745,6 +745,10 @@ export function addBookmark(type: string, bookmarkName: string, values: Record<s
       console.log('Rclone', 'Creating new bookmark', bookmarkName)
       try {
         updateBookmarkFields(bookmarkName, providerObject, values)
+        // Refresh the in-memory cache + tray immediately instead of waiting for
+        // the (sometimes delayed/missed) config-file watcher, so the new bookmark
+        // actually shows up in the tray right after creation.
+        updateBookmarksCache()
         dialogs.notification(`Bookmark ${bookmarkName} is created`)
         resolve()
       } catch (err) {
@@ -773,6 +777,7 @@ export function updateBookmark(bookmark: Bookmark | string, values: Record<strin
 
     try {
       updateBookmarkFields(bm.$name, providerObject, values, bm as unknown as Record<string, string>)
+      updateBookmarksCache()
       dialogs.notification(`Bookmark ${bm.$name} is updated.`)
       resolve()
     } catch (err) {
@@ -790,6 +795,7 @@ export function deleteBookmark(bookmark: Bookmark | string): Promise<void> {
     doCommand(['config', 'delete', bm.$name])
       .then(() => {
         BookmarkProcessManager.killAll(bm.$name)
+        updateBookmarksCache()
         dialogs.notification(`Bookmark ${bm.$name} is deleted.`)
         resolve()
       })
