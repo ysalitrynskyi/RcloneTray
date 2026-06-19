@@ -809,16 +809,25 @@ function getBookmarkRemoteWithRoot(bookmark: Bookmark): string {
  * Extracted as a pure-ish function for testability.
  */
 export function buildMountArgs(remoteWithRoot: string, mountpoint: string, volname: string): string[] {
-  return [
+  const args = [
     'mount',
     remoteWithRoot,
     mountpoint,
     '--attr-timeout', Math.max(1, parseInt(String(settings.get('rclone_cache_files')))) + 's',
     '--dir-cache-time', Math.max(1, parseInt(String(settings.get('rclone_cache_directories')))) + 's',
-    '--allow-non-empty',
     '--volname', volname,
     '-vv'
   ]
+
+  // VFS cache mode is the single most important flag for a mount that behaves
+  // like a real disk: without it many apps cannot write/seek/truncate files and
+  // copies through Finder/Explorer fail. Default to "writes"; user-configurable.
+  const vfsCacheMode = String(settings.get('rclone_mount_vfs_cache_mode') || 'writes').trim()
+  if (vfsCacheMode && vfsCacheMode !== 'off') {
+    args.push('--vfs-cache-mode', vfsCacheMode)
+  }
+
+  return args
 }
 
 /**

@@ -430,17 +430,31 @@
           </div>
 
           <div class="section">
-            <div class="section-title">Cache</div>
+            <div class="section-title">Mounting</div>
+            <div class="form-row">
+              <label class="form-label">VFS cache mode</label>
+              <div class="form-control">
+                <select name="rclone_mount_vfs_cache_mode" id="rclone_mount_vfs_cache_mode">
+                  <option value="off">Off — read-only friendly, lowest disk use</option>
+                  <option value="minimal">Minimal — basic compatibility</option>
+                  <option value="writes">Writes — recommended (apps can edit &amp; save files)</option>
+                  <option value="full">Full — best for random access (uses more disk)</option>
+                </select>
+                <div class="form-help">If mounted drives feel broken — files won't save, copies fail, or editing errors — use <strong>Writes</strong> or <strong>Full</strong>. Applies to new mounts.</div>
+              </div>
+            </div>
             <div class="form-row">
               <label class="form-label">File cache (sec)</label>
               <div class="form-control">
                 <input type="number" name="rclone_cache_files" id="rclone_cache_files" min="0" max="3600">
+                <div class="form-help">How long file metadata stays cached.</div>
               </div>
             </div>
             <div class="form-row">
               <label class="form-label">Dir cache (sec)</label>
               <div class="form-control">
                 <input type="number" name="rclone_cache_directories" id="rclone_cache_directories" min="0" max="3600">
+                <div class="form-help">How long folder listings stay cached.</div>
               </div>
             </div>
           </div>
@@ -602,6 +616,7 @@
           $main.getSetting('rclone_use_bundled'),
           $main.getSetting('rclone_cache_files'),
           $main.getSetting('rclone_cache_directories'),
+          $main.getSetting('rclone_mount_vfs_cache_mode'),
           $main.getSetting('custom_args'),
           $main.getSetting('rclone_ncdu_enable'),
           $main.getSetting('rclone_sync_enable'),
@@ -616,7 +631,7 @@
 
         const [
           isAutostart, trayMenuShowType, rcloneConfigFile, rcloneUseBundled,
-          rcloneCacheFiles, rcloneCacheDirectories, customArgs,
+          rcloneCacheFiles, rcloneCacheDirectories, rcloneMountVfsCacheMode, customArgs,
           rcloneNcduEnable, rcloneSyncEnable, rcloneSyncAutouploadDelay,
           rcloneServingHttpEnable, rcloneServingFtpEnable,
           rcloneServingResticEnable, rcloneServingWebdavEnable,
@@ -630,6 +645,7 @@
         setField('rclone_use_bundled', 'checked', rcloneUseBundled !== false);
         setField('rclone_cache_files', 'value', rcloneCacheFiles || 3);
         setField('rclone_cache_directories', 'value', rcloneCacheDirectories || 10);
+        setField('rclone_mount_vfs_cache_mode', 'value', rcloneMountVfsCacheMode || 'writes');
         setField('custom_args', 'value', customArgs || '');
         setField('rclone_ncdu_enable', 'checked', !!rcloneNcduEnable);
         setField('rclone_sync_enable', 'checked', !!rcloneSyncEnable);

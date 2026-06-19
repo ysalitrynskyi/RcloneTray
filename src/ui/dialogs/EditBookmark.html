@@ -8,6 +8,7 @@
   <style>
     body {
       padding: 0;
+      -webkit-app-region: no-drag;
     }
     
     .header {
@@ -74,6 +75,23 @@
       color: white;
     }
     
+    .tip {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      margin: 0 16px 14px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: rgba(0, 122, 255, 0.08);
+      border: 1px solid rgba(0, 122, 255, 0.18);
+      font-size: 11.5px;
+      line-height: 1.45;
+      color: var(--text-secondary, #555);
+    }
+
+    .tip svg { width: 15px; height: 15px; flex-shrink: 0; margin-top: 1px; color: var(--accent, #007AFF); }
+    .tip a { color: var(--accent, #007AFF); }
+
     .loading {
       display: flex;
       align-items: center;
@@ -106,6 +124,10 @@
         background: var(--bg-primary, #1c1c1e);
         border-color: var(--border-color, #3a3a3c);
       }
+      .tip {
+        background: rgba(10, 132, 255, 0.12);
+        border-color: rgba(10, 132, 255, 0.28);
+      }
       .btn-danger {
         border-color: #ff453a;
         color: #ff453a;
@@ -130,6 +152,11 @@
       <div id="bookmark-settings">
         <div class="loading">Loading settings</div>
       </div>
+    </div>
+
+    <div class="tip">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+      <span>Use the <strong>Advanced</strong> tab for provider-specific options. Mount behaviour (read/write) is controlled in <strong>Preferences → Rclone → VFS cache mode</strong>.</span>
     </div>
 
     <div class="form-footer">

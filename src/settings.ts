@@ -17,6 +17,7 @@ const DEFAULTS: Settings = {
 
   rclone_cache_files: 3,
   rclone_cache_directories: 10,
+  rclone_mount_vfs_cache_mode: 'writes',
   rclone_sync_enable: true,
   rclone_sync_autoupload_delay: 5,
   rclone_ncdu_enable: false,

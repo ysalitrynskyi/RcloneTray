@@ -159,8 +159,11 @@ export function preferences(): void {
 export function addBookmark(): void {
   createNewDialog('AddBookmark', {
     $singleId: 1,
-    width: 600,
-    height: 100
+    width: 560,
+    height: 600,
+    minWidth: 460,
+    minHeight: 420,
+    resizable: true
   })
 }
 
@@ -171,8 +174,11 @@ export function editBookmark(this: Bookmark): void {
   const props: DialogProps = { ...this }
   createNewDialog('EditBookmark', {
     $singleId: this.$name,
-    width: 600,
-    height: 460
+    width: 560,
+    height: 520,
+    minWidth: 460,
+    minHeight: 360,
+    resizable: true
   }, props)
 }
 

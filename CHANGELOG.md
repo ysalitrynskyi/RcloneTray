@@ -5,6 +5,33 @@ All notable changes to RcloneTray will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-06-19
+
+### Added
+- **Custom application icon.** Replaced the default Electron icon with a purpose-built
+  RcloneTray app icon (`.icns` / `.ico` / `.png`) wired into electron-builder for
+  macOS, Windows and Linux, and used in the About window.
+- **Mount VFS cache mode setting** (Preferences → Rclone → Mounting). Defaults to
+  `writes` so mounted drives behave like real disks — apps can open, edit and save
+  files, and Finder/Explorer copies succeed. Choose `off`/`minimal`/`writes`/`full`.
+- **In-app guidance.** The Add Remote and Edit Bookmark dialogs now explain what to
+  do, and point to the Advanced tab / Custom args / rclone.org docs for power users.
+
+### Changed
+- **Redesigned "Add Remote" dialog.** The oversized native provider dropdown is gone.
+  It is replaced by a searchable, scrollable provider list with colored avatars,
+  human-readable names and a clear two-step flow (pick provider → fill details).
+  Fixes the huge-font dropdown and the cramped, empty-looking dialog.
+- Edit Bookmark and Preferences dialogs polished for consistent spacing, smaller
+  fonts and helper text on cache/mount fields.
+
+### Fixed
+- **Mounts now work as read/write drives by default.** `rclone mount` previously ran
+  without `--vfs-cache-mode`, which caused writes, edits and many app operations to
+  fail. The new default (`--vfs-cache-mode writes`) fixes this. Also dropped the
+  legacy `--allow-non-empty` flag (the mountpoint is already verified empty), which
+  could make macOS/macFUSE mounts fail.
+
 ## [1.3.2] - 2026-06-19
 
 ### Fixed

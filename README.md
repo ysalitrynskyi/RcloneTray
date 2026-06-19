@@ -113,6 +113,14 @@ Make sure you have the required FUSE driver installed for your OS. See [Requirem
 </details>
 
 <details>
+<summary><b>My drive mounts, but files won't save / editing fails</b></summary>
+
+Open **Preferences → Rclone → Mounting** and set **VFS cache mode** to **Writes**
+(the default) or **Full**. This lets applications open, edit and save files on the
+mounted drive. Re-mount the bookmark for the change to take effect.
+</details>
+
+<details>
 <summary><b>Where is the config file stored?</b></summary>
 
 RcloneTray uses the default Rclone config location:
@@ -180,7 +188,13 @@ npm run publish
 
 ## 📋 Changelog
 
-### v1.3.2 (Latest)
+### v1.4.0 (Latest)
+- **New app icon** - custom RcloneTray icon for macOS/Windows/Linux (no more default Electron icon)
+- **Mounts fixed** - mounts now run with `--vfs-cache-mode writes` by default, so files actually save and apps can edit them; configurable in Preferences
+- **Redesigned "Add Remote"** - searchable provider list with avatars instead of the oversized native dropdown, plus a clear pick-then-configure flow
+- **More guidance** - in-app tips pointing to Advanced options, custom args and rclone docs
+
+### v1.3.2
 - **Release hardening** - rclone binary downloader now fails fast, mac builds are explicitly unsigned, and provider help text no longer uses `innerHTML`
 
 ### v1.3.1

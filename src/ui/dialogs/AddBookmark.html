@@ -1,104 +1,271 @@
 <!doctype html>
 <html>
 <head>
-  <title>New Bookmark</title>
+  <title>Add Remote</title>
   <script defer>
     $main.loadStyles()
   </script>
   <style>
     body {
       padding: 0;
+      -webkit-app-region: no-drag;
     }
-    
-    .header {
-      padding: 16px 20px;
+
+    /* ---- Step 1: provider picker ---- */
+    .picker-header {
+      padding: 18px 20px 12px;
       border-bottom: 1px solid var(--border-color, #e0e0e0);
       background: var(--bg-primary, #fafafa);
     }
-    
-    .header h1 {
+
+    .picker-header h1 {
       font-size: 15px;
       font-weight: 600;
-      margin: 0 0 12px 0;
+      margin: 0;
       color: var(--text-primary, #1a1a1a);
     }
-    
-    .header select {
-      width: 100%;
+
+    .picker-header p {
+      margin: 4px 0 12px;
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--text-secondary, #666);
     }
-    
-    .form-body {
-      padding: 16px 20px;
+
+    .search-wrap {
+      position: relative;
     }
-    
-    .form-group {
-      margin-bottom: 16px;
+
+    .search-wrap svg {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 15px;
+      height: 15px;
+      opacity: 0.45;
+      pointer-events: none;
     }
-    
-    .form-group:last-child {
-      margin-bottom: 0;
+
+    #provider-search {
+      padding-left: 32px;
     }
-    
+
+    .provider-list {
+      list-style: none;
+      margin: 0;
+      padding: 6px;
+      overflow-y: auto;
+      max-height: 360px;
+    }
+
+    .provider-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      -webkit-app-region: no-drag;
+    }
+
+    .provider-item:hover,
+    .provider-item.active {
+      background: var(--bg-tertiary, #f0f0f0);
+    }
+
+    .provider-avatar {
+      width: 32px;
+      height: 32px;
+      flex-shrink: 0;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+      color: #fff;
+      text-transform: uppercase;
+    }
+
+    .provider-meta {
+      min-width: 0;
+    }
+
+    .provider-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary, #1a1a1a);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .provider-type {
+      font-size: 11px;
+      color: var(--text-secondary, #888);
+      margin-top: 1px;
+    }
+
+    .empty-state {
+      padding: 28px 20px;
+      text-align: center;
+      color: var(--text-secondary, #888);
+      font-size: 12px;
+    }
+
+    /* ---- Step 2: configure ---- */
+    #configure { display: none; }
+
+    .config-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border-color, #e0e0e0);
+      background: var(--bg-primary, #fafafa);
+    }
+
+    .back-btn {
+      -webkit-app-region: no-drag;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border-color, #e0e0e0);
+      background: var(--bg-secondary, #fff);
+      color: var(--text-primary, #1a1a1a);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    .back-btn:hover { background: var(--bg-tertiary, #f0f0f0); }
+    .back-btn svg { width: 14px; height: 14px; }
+
+    .config-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .config-title .provider-avatar { width: 28px; height: 28px; font-size: 13px; }
+
+    .config-title h1 {
+      font-size: 14px;
+      font-weight: 600;
+      margin: 0;
+      color: var(--text-primary, #1a1a1a);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .config-body { padding: 16px 18px; }
+
+    .form-group { margin-bottom: 4px; }
+
     .form-label {
       display: block;
-      font-weight: 500;
+      font-weight: 600;
+      font-size: 12px;
       margin-bottom: 6px;
       color: var(--text-primary, #1a1a1a);
     }
-    
+
     .form-label small {
       font-weight: 400;
-      color: var(--text-secondary, #666);
+      color: var(--text-secondary, #888);
       margin-left: 4px;
     }
-    
-    #provider-settings-wrapper {
-      display: none;
+
+    .tip {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      margin: 14px 0 4px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: rgba(0, 122, 255, 0.08);
+      border: 1px solid rgba(0, 122, 255, 0.18);
+      font-size: 11.5px;
+      line-height: 1.45;
+      color: var(--text-secondary, #555);
     }
-    
-    #bookmark-settings {
-      margin-top: 16px;
-    }
-    
+
+    .tip svg { width: 15px; height: 15px; flex-shrink: 0; margin-top: 1px; color: var(--accent, #007AFF); }
+    .tip a { color: var(--accent, #007AFF); }
+
     .form-footer {
-      padding: 12px 20px;
+      padding: 12px 18px;
       border-top: 1px solid var(--border-color, #e0e0e0);
       display: flex;
       justify-content: flex-end;
       background: var(--bg-primary, #fafafa);
     }
-    
+
+    .loading, .error { padding: 28px; text-align: center; color: var(--text-secondary, #888); font-size: 12px; }
+    .error { color: #ff3b30; }
+
     @media (prefers-color-scheme: dark) {
-      .header {
+      .picker-header, .config-header, .form-footer {
         background: var(--bg-primary, #1c1c1e);
         border-color: var(--border-color, #3a3a3c);
       }
-      .form-footer {
-        background: var(--bg-primary, #1c1c1e);
-        border-color: var(--border-color, #3a3a3c);
+      .provider-item:hover, .provider-item.active { background: var(--bg-tertiary, #3a3a3c); }
+      .back-btn { background: var(--bg-secondary, #2c2c2e); border-color: var(--border-color, #3a3a3c); }
+      .tip {
+        background: rgba(10, 132, 255, 0.12);
+        border-color: rgba(10, 132, 255, 0.28);
       }
     }
   </style>
 </head>
 <body>
-  <form id="the-form">
-    <div class="header">
-      <h1>Create New Bookmark</h1>
-      <select name="type" id="providers-list">
-        <option value="">— Select Provider —</option>
-      </select>
+  <!-- Step 1: choose a provider -->
+  <section id="picker">
+    <div class="picker-header">
+      <h1>Add a remote</h1>
+      <p>Pick the cloud or storage service you want to connect. After this you'll fill in your credentials, then you can mount, sync or serve it from the tray.</p>
+      <div class="search-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="provider-search" placeholder="Search providers (e.g. Drive, S3, SFTP)…" autocomplete="off" spellcheck="false">
+      </div>
     </div>
+    <ul class="provider-list" id="provider-list">
+      <li class="loading">Loading providers…</li>
+    </ul>
+  </section>
 
-    <div id="provider-settings-wrapper">
-      <div class="form-body">
-        <div class="form-group">
-          <label class="form-label">
-            Name <small>(required)</small>
-          </label>
-          <input type="text" name="name" id="bookmark-name" maxlength="20" placeholder="My Cloud Storage" required>
+  <!-- Step 2: configure the bookmark -->
+  <form id="the-form">
+    <div id="configure">
+      <div class="config-header">
+        <button type="button" class="back-btn" id="back-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"/></svg>
+          Back
+        </button>
+        <div class="config-title">
+          <div class="provider-avatar" id="config-avatar"></div>
+          <h1 id="config-name">Provider</h1>
         </div>
-        
+      </div>
+
+      <div class="config-body">
+        <input type="hidden" name="type" id="bookmark-type-field">
+        <div class="form-group">
+          <label class="form-label">Name <small>(required)</small></label>
+          <input type="text" name="name" id="bookmark-name" maxlength="40" placeholder="My Cloud Storage" required>
+        </div>
+
         <div id="bookmark-settings"></div>
+
+        <div class="tip">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <span>Need extra control? Open the <strong>Advanced</strong> tab above for provider-specific options, or set global flags in <strong>Preferences → Rclone → Custom args</strong>. Full reference at <a href="https://rclone.org/docs/" target="_blank">rclone.org/docs</a>.</span>
+        </div>
       </div>
 
       <div class="form-footer">
@@ -108,64 +275,146 @@
   </form>
 
   <script>
-    (async function() {
-      const theForm = document.getElementById('the-form');
-      const providerSettingsWrapper = document.getElementById('provider-settings-wrapper');
-      const bookmarkSettingsWrapper = document.getElementById('bookmark-settings');
-      const providersListSelect = document.getElementById('providers-list');
+    (function () {
+      const PALETTE = ['#007AFF', '#34C759', '#FF9500', '#AF52DE', '#FF2D55', '#5856D6', '#00C7BE', '#FF3B30', '#A2845E', '#30B0C7'];
+      function colorFor(text) {
+        let h = 0;
+        for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) >>> 0;
+        return PALETTE[h % PALETTE.length];
+      }
 
-      try {
-        // Fetch providers
-        const providers = await $main.rclone.providers();
-        
-        // Populate select options
-        for (const providerName in providers) {
-          const option = document.createElement('option');
-          option.value = providerName;
-          option.textContent = providers[providerName].Description;
-          option.providerObject = providers[providerName];
-          providersListSelect.appendChild(option);
+      const picker = document.getElementById('picker');
+      const configure = document.getElementById('configure');
+      const theForm = document.getElementById('the-form');
+      const listEl = document.getElementById('provider-list');
+      const searchEl = document.getElementById('provider-search');
+      const settingsWrap = document.getElementById('bookmark-settings');
+      const nameInput = document.getElementById('bookmark-name');
+      let providers = {};
+      let items = [];
+
+      function showError(msg) {
+        listEl.textContent = '';
+        const li = document.createElement('li');
+        li.className = 'error';
+        li.textContent = msg;
+        listEl.appendChild(li);
+      }
+
+      function renderList(filter) {
+        const q = (filter || '').trim().toLowerCase();
+        listEl.textContent = '';
+        const visible = items.filter(it =>
+          !q || it.name.toLowerCase().includes(q) || it.type.toLowerCase().includes(q)
+        );
+
+        if (!visible.length) {
+          const li = document.createElement('li');
+          li.className = 'empty-state';
+          li.textContent = q ? `No providers match "${filter}".` : 'No providers available.';
+          listEl.appendChild(li);
+          window.electronAPI.resizeToContent();
+          return;
         }
 
-        // Handle provider selection
-        providersListSelect.addEventListener('change', function() {
-          const selectedOption = this.selectedOptions[0];
-          
-          if (selectedOption && selectedOption.providerObject) {
-            const provider = selectedOption.providerObject;
-            document.title = `New ${provider.Name} Bookmark`;
-            window.api.renderBookmarkSettings(bookmarkSettingsWrapper, this.value);
-            providerSettingsWrapper.style.display = 'block';
-          } else {
-            document.title = 'New Bookmark';
-            providerSettingsWrapper.style.display = 'none';
-            bookmarkSettingsWrapper.textContent = '';
-          }
-          
-          window.electronAPI.resizeToContent();
-        });
+        visible.forEach((it, idx) => {
+          const li = document.createElement('li');
+          li.className = 'provider-item' + (idx === 0 ? ' active' : '');
+          li.dataset.type = it.type;
 
-        // Trigger initial resize
+          const avatar = document.createElement('div');
+          avatar.className = 'provider-avatar';
+          avatar.style.background = colorFor(it.type);
+          avatar.textContent = (it.name || it.type)[0];
+
+          const meta = document.createElement('div');
+          meta.className = 'provider-meta';
+          const nm = document.createElement('div');
+          nm.className = 'provider-name';
+          nm.textContent = it.name;
+          const tp = document.createElement('div');
+          tp.className = 'provider-type';
+          tp.textContent = it.type;
+          meta.appendChild(nm);
+          meta.appendChild(tp);
+
+          li.appendChild(avatar);
+          li.appendChild(meta);
+          li.addEventListener('click', () => selectProvider(it.type));
+          listEl.appendChild(li);
+        });
         window.electronAPI.resizeToContent();
-
-        // Handle form submission
-        theForm.addEventListener('submit', async function(event) {
-          event.preventDefault();
-
-          const data = window.electronAPI.getTheFormData(this);
-
-          try {
-            await $main.rclone.addBookmark(data.type, data.name, data.options || {});
-            window.close();
-          } catch (error) {
-            window.electronAPI.errorBox(error.message || String(error));
-          }
-        });
-        
-      } catch (error) {
-        console.error('Failed to load providers:', error);
-        window.electronAPI.errorBox('Failed to load providers: ' + (error.message || error));
       }
+
+      function selectProvider(type) {
+        const provider = providers[type];
+        if (!provider) return;
+        const label = provider.Description || type;
+        document.title = `New ${provider.Name || type} Bookmark`;
+        document.getElementById('config-name').textContent = label;
+        const avatar = document.getElementById('config-avatar');
+        avatar.style.background = colorFor(type);
+        avatar.textContent = (label || type)[0];
+
+        document.getElementById('bookmark-type-field').value = type;
+        window.api.renderBookmarkSettings(settingsWrap, type);
+
+        picker.style.display = 'none';
+        configure.style.display = 'block';
+        nameInput.focus();
+        window.electronAPI.resizeToContent();
+      }
+
+      function backToPicker() {
+        configure.style.display = 'none';
+        settingsWrap.textContent = '';
+        nameInput.value = '';
+        picker.style.display = 'block';
+        document.title = 'Add Remote';
+        searchEl.focus();
+        window.electronAPI.resizeToContent();
+      }
+
+      document.getElementById('back-btn').addEventListener('click', backToPicker);
+
+      searchEl.addEventListener('input', () => renderList(searchEl.value));
+      searchEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const first = listEl.querySelector('.provider-item');
+          if (first) selectProvider(first.dataset.type);
+        }
+      });
+
+      theForm.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        const data = window.electronAPI.getTheFormData(this);
+        if (!data.name || !String(data.name).trim()) {
+          window.electronAPI.errorBox('Please enter a name for this bookmark.');
+          return;
+        }
+        try {
+          await $main.rclone.addBookmark(data.type, data.name, data.options || {});
+          window.close();
+        } catch (error) {
+          window.electronAPI.errorBox(error.message || String(error));
+        }
+      });
+
+      (async function init() {
+        try {
+          providers = await $main.rclone.providers() || {};
+          items = Object.keys(providers).map(type => ({
+            type,
+            name: providers[type].Description || type
+          })).sort((a, b) => a.name.localeCompare(b.name));
+          renderList('');
+          searchEl.focus();
+        } catch (error) {
+          console.error('Failed to load providers:', error);
+          showError('Failed to load providers: ' + (error.message || error));
+        }
+      })();
     })();
   </script>
 </body>

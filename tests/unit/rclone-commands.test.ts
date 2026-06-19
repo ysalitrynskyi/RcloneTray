@@ -12,6 +12,7 @@ const mockSettings: Record<string, unknown> = {
   rclone_use_bundled: true,
   rclone_cache_files: 3,
   rclone_cache_directories: 10,
+  rclone_mount_vfs_cache_mode: 'writes',
   rclone_serving_username: '',
   rclone_serving_password: ''
 }
@@ -170,6 +171,7 @@ describe('buildMountArgs', () => {
   beforeEach(() => {
     mockSettings.rclone_cache_files = 3
     mockSettings.rclone_cache_directories = 10
+    mockSettings.rclone_mount_vfs_cache_mode = 'writes'
   })
 
   it('builds a mount argument array', () => {
@@ -177,10 +179,26 @@ describe('buildMountArgs', () => {
     expect(args[0]).toBe('mount')
     expect(args[1]).toBe('myremote:/')
     expect(args[2]).toBe('/mnt/point')
-    expect(args).toContain('--allow-non-empty')
     expect(args).toContain('--volname')
     expect(args[args.indexOf('--volname') + 1]).toBe('myremote')
     expect(args).toContain('-vv')
+  })
+
+  it('adds the configured vfs-cache-mode by default', () => {
+    const args = buildMountArgs('r:/', '/mnt', 'r')
+    expect(args).toContain('--vfs-cache-mode')
+    expect(args[args.indexOf('--vfs-cache-mode') + 1]).toBe('writes')
+  })
+
+  it('omits vfs-cache-mode when set to "off"', () => {
+    mockSettings.rclone_mount_vfs_cache_mode = 'off'
+    const args = buildMountArgs('r:/', '/mnt', 'r')
+    expect(args).not.toContain('--vfs-cache-mode')
+  })
+
+  it('does not use the legacy --allow-non-empty flag', () => {
+    const args = buildMountArgs('r:/', '/mnt', 'r')
+    expect(args).not.toContain('--allow-non-empty')
   })
 
   it('enforces a minimum cache time of 1 second', () => {

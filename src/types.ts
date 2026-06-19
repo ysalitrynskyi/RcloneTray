@@ -10,6 +10,7 @@ export interface Settings {
   custom_args: string
   rclone_cache_files: number
   rclone_cache_directories: number
+  rclone_mount_vfs_cache_mode: string
   rclone_sync_enable: boolean
   rclone_sync_autoupload_delay: number
   rclone_ncdu_enable: boolean
