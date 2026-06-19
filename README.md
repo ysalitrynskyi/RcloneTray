@@ -177,6 +177,7 @@ rclone/               Bundled rclone binaries
 
 Recent highlights — see [CHANGELOG.md](CHANGELOG.md) for the full history.
 
+- **v1.5.1** — Fixed bookmark creation silently failing: errors (like a missing required S3 bucket) are now shown in the dialog instead of the window just closing.
 - **v1.5.0** — Reliability pass (clearer errors, safer add/update/delete, native file-manager open); unified `ui.css` design system with form-field fixes; platform-aware "Show in Finder/Explorer/Files" labels.
 - **v1.4.2** — Adding a remote now appears in the tray immediately; brand icon restored and modernized; larger Preferences window; working About buttons.
 - **v1.4.0** — Working mounts (`--vfs-cache-mode writes` by default); searchable provider picker; custom app icon; in-app guidance.

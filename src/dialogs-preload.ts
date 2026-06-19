@@ -106,8 +106,13 @@ contextBridge.exposeInMainWorld('$main', {
       try {
         return await ipcRenderer.invoke(channel, ...args) as T
       } catch (error) {
+        // Do NOT swallow: callers (e.g. addBookmark) rely on the rejection to keep
+        // the dialog open and show the real error. Strip Electron's IPC prefix so
+        // the message stays readable.
         console.error(`Error with IPC channel '${channel}':`, error)
-        return undefined
+        const raw = error instanceof Error ? error.message : String(error)
+        const cleaned = raw.replace(/^Error invoking remote method '[^']*':\s*(Error:\s*)?/, '')
+        throw new Error(cleaned || raw)
       }
     }
 

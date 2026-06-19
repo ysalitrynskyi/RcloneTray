@@ -5,6 +5,16 @@ All notable changes to RcloneTray will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2026-06-19
+
+### Fixed
+- **Creating a bookmark silently doing nothing.** The renderer's IPC wrapper
+  swallowed errors and returned `undefined`, so when bookmark creation failed in the
+  main process (for example, an S3 remote with a required **Bucket or Path** left
+  empty), the dialog treated it as success, closed itself, and showed neither the new
+  bookmark nor any error. IPC errors are now propagated, so the dialog stays open and
+  shows the real reason the bookmark couldn't be created.
+
 ## [1.5.0] - 2026-06-19
 
 Incorporates and finalizes a round of code-review changes from two other reviewers,
