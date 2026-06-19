@@ -50,7 +50,8 @@ test.describe('RcloneTray Application launch', () => {
     fs.chmodSync(RCLONE_STUB, 0o755)
 
     electronApp = await electron.launch({
-      args: [MAIN_JS],
+      // --no-sandbox is required to launch Electron in CI containers / xvfb.
+      args: ['--no-sandbox', MAIN_JS],
       env: {
         ...process.env,
         RCLONETRAY_TEST: '1',
