@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
+
 bin_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)/rclone"
 tmp_dir=$(mktemp -d 2>/dev/null || mktemp -d -t 'rclone')
-latest_version=$(curl -s https://downloads.rclone.org/version.txt | tr -d '\r' | awk '{print $2}')
+trap 'rm -rf "${tmp_dir}"' EXIT
+
+latest_version=$(curl -fsSL https://downloads.rclone.org/version.txt | tr -d '\r' | awk '{print $2}')
+
+if [ -z "${latest_version}" ]; then
+    echo "Unable to determine latest rclone version."
+    exit 1
+fi
 
 if [ -f "${bin_dir}/version.txt" ]; then
     current_version=$(cat "${bin_dir}/version.txt" | tr -d '\r')
@@ -26,16 +35,8 @@ download_and_extract() {
     echo "Constructed URL: $url"
 
     mkdir -p "${bin_dir}/${bin_folder}/${arch}"
-    curl --progress-bar -o "${tmp_dir}/${os}-${arch}.zip" "${url}"
-    if [ $? -ne 0 ]; then
-        echo "Failed to download. URL might be incorrect."
-        return
-    fi
+    curl -fL --progress-bar -o "${tmp_dir}/${os}-${arch}.zip" "${url}"
     unzip -q "${tmp_dir}/${os}-${arch}.zip" -d "${tmp_dir}/${os}-${arch}"
-    if [ $? -ne 0 ]; then
-        echo "Failed to unzip. The file might not have been downloaded correctly."
-        return
-    fi
     mv "${tmp_dir}/${os}-${arch}/rclone-"*"/rclone"* "${bin_dir}/${bin_folder}/${arch}/"
     chmod +x "${bin_dir}/${bin_folder}/${arch}/rclone"*
 }
@@ -78,7 +79,7 @@ case "${target}" in
         ;;
 esac
 
-curl -s -o "${bin_dir}/LICENSE" "https://raw.githubusercontent.com/rclone/rclone/master/COPYING"
+curl -fsSL -o "${bin_dir}/LICENSE" "https://raw.githubusercontent.com/rclone/rclone/master/COPYING"
 # Only stamp version.txt for a complete download so a partial (single-platform)
 # run does not make a later full run think everything is already up to date.
 if [ "${target}" == "all" ]; then

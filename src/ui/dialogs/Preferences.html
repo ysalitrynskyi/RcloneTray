@@ -585,7 +585,11 @@
 
       // Check if preload APIs are available
       if (typeof $main === 'undefined') {
-        loadingEl.innerHTML = '<div class="error">Error: Preload script not loaded.</div>';
+        loadingEl.textContent = '';
+        const errDiv = document.createElement('div');
+        errDiv.className = 'error';
+        errDiv.textContent = 'Error: Preload script not loaded.';
+        loadingEl.appendChild(errDiv);
         return;
       }
 

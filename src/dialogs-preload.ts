@@ -28,6 +28,38 @@ interface DependencyItem {
   row: HTMLElement
 }
 
+function createHelpTextElement(help: string): HTMLDivElement {
+  const fieldHelpText = document.createElement('div')
+  const urlPattern = /\b(https?|ftp|file):\/\/[-A-Z0-9+&@#/%?=~_|!:,.]*[-A-Z0-9+&@#/%=~_|]/ig
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+
+  const appendTextWithBreaks = (text: string): void => {
+    text.split('\n').forEach((part, index) => {
+      if (index > 0) {
+        fieldHelpText.appendChild(document.createElement('br'))
+      }
+      if (part) {
+        fieldHelpText.appendChild(document.createTextNode(part))
+      }
+    })
+  }
+
+  while ((match = urlPattern.exec(help)) !== null) {
+    appendTextWithBreaks(help.slice(lastIndex, match.index))
+    const link = document.createElement('a')
+    link.href = match[0]
+    link.target = '_blank'
+    link.rel = 'noopener noreferrer'
+    link.textContent = match[0]
+    fieldHelpText.appendChild(link)
+    lastIndex = match.index + match[0].length
+  }
+
+  appendTextWithBreaks(help.slice(lastIndex))
+  return fieldHelpText
+}
+
 // Extend Window interface
 declare global {
   interface Window {
@@ -395,10 +427,7 @@ contextBridge.exposeInMainWorld('htmlElements', {
 
     // Setup helping text.
     if (optionFieldDefinition.Help) {
-      const fieldHelpText = document.createElement('div')
-      fieldHelpText.innerHTML = optionFieldDefinition.Help
-        .replace(/(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#/%?=~_|!:,.]*[-A-Z0-9+&@#/%=~_|])/ig, '<a target="_blank" href="$1">$1</a>')
-        .replace(/\n/g, '<br />')
+      const fieldHelpText = createHelpTextElement(optionFieldDefinition.Help)
       td.appendChild(fieldHelpText)
       if (optionFieldDefinition.$Type === 'boolean') {
         fieldHelpText.className = 'label-help-inline'

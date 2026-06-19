@@ -180,7 +180,10 @@ npm run publish
 
 ## 📋 Changelog
 
-### v1.3.1 (Latest)
+### v1.3.2 (Latest)
+- **Release hardening** - rclone binary downloader now fails fast, mac builds are explicitly unsigned, and provider help text no longer uses `innerHTML`
+
+### v1.3.1
 - **Security** - dialog error messages now render via `textContent` (no HTML injection)
 
 ### v1.3.0

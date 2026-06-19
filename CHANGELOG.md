@@ -5,6 +5,20 @@ All notable changes to RcloneTray will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2026-06-19
+
+### Fixed
+- `update-rclone-binaries.sh` now fails fast when rclone version lookup,
+  download, unzip, or license download fails. This prevents CI/release jobs from
+  publishing packages with missing bundled rclone binaries after a silent script
+  failure.
+- macOS packaging now explicitly disables automatic code signing (`identity:
+  null`) so local and CI builds match the documented unsigned-app workflow.
+
+### Security
+- Provider help text in the preload bridge now renders via DOM text/link nodes
+  instead of `innerHTML`, removing another unnecessary HTML injection surface.
+
 ## [1.3.1] - 2026-06-19
 
 ### Security
