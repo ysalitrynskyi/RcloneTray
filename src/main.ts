@@ -192,8 +192,13 @@ if (!app.requestSingleInstanceLock()) {
   app.exit()
 }
 
-// For debugging purposes.
-if (isDev) {
+// Whether we are running inside the automated E2E harness.
+const isTest = process.env.RCLONETRAY_TEST === '1'
+
+// For debugging purposes (skipped under the E2E harness so we don't fight
+// Playwright's own inspector/relaunch handling).
+if (isDev && !isTest) {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const inspector = require('inspector')
 
   if (inspector.url()) {
@@ -209,16 +214,12 @@ if (isDev) {
 
   // load electron-reload
   try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     require('electron-reload')(__dirname, {
       electron: path.join(__dirname, '..', 'node_modules', '.bin', 'electron')
     })
-  } catch (err) { }
-
-  // @TODO Remove before release
-  ;(global as Record<string, unknown>).$main = {
-    app: app,
-    __dirname: __dirname,
-    require: require
+  } catch {
+    // electron-reload is optional in dev; ignore if unavailable.
   }
 }
 

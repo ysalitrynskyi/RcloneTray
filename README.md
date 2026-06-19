@@ -27,9 +27,36 @@ RcloneTray is a simple cross-platform GUI for [Rclone](https://rclone.org/) and 
 
 | Platform | Architecture | Download |
 |----------|-------------|----------|
-| Windows | x64, arm64 | `.exe` installer |
-| macOS | Intel & Apple Silicon | `.dmg` |
+| Windows | x64, ia32, arm64 | `.exe` installer |
+| macOS | Intel & Apple Silicon | `.dmg`, `.zip` |
 | Linux | x64 | `.AppImage`, `.deb` |
+
+> 📘 New here? Read the plain-English **[Getting Started guide](docs/GETTING_STARTED.md)** for step-by-step install instructions.
+
+### First launch on macOS (unsigned app)
+
+RcloneTray is **not** signed with an Apple Developer ID ($99/year — this app is free). After installing from the `.dmg`, macOS may block it with *"Apple could not verify…"*. This is normal for free, unsigned open-source apps.
+
+**One-time fix (Terminal):**
+
+```bash
+xattr -d com.apple.quarantine /Applications/RcloneTray.app
+```
+
+Or right-click the app → **Open** → **Open**. The Terminal command is the most reliable fix.
+
+### First launch on Windows (unsigned installer)
+
+Windows SmartScreen may warn about an unknown publisher. Click **More info → Run anyway** to continue.
+
+### First launch on Linux (AppImage)
+
+Make the AppImage executable, then run it:
+
+```bash
+chmod +x RcloneTray-*.AppImage
+./RcloneTray-*.AppImage
+```
 
 ### Build from Source
 
@@ -117,8 +144,9 @@ npm install
 | `npm run build` | Compile TypeScript |
 | `npm run typecheck` | Run type checking |
 | `npm run lint` | Run ESLint |
-| `npm run test` | Run unit and integration tests |
-| `npm run test:e2e` | Run E2E tests |
+| `npm run test` | Run unit & integration tests (vitest) |
+| `npm run test:coverage` | Run tests with a coverage report |
+| `npm run test:e2e` | Run E2E smoke tests (Playwright + Electron) |
 | `npm run dist` | Create distribution packages |
 
 ### Project Structure
@@ -152,7 +180,16 @@ npm run publish
 
 ## 📋 Changelog
 
-### v1.2.0 (Latest)
+### v1.3.0 (Latest)
+- **Reliability** - rclone commands now run via `execFile` (no shell) to avoid quoting/escaping bugs
+- **Bug fix** - bundled rclone binary is now found on x64/ia32 (architecture name mapping)
+- **Windows** - replaced deprecated `wmic` with PowerShell for free-drive-letter detection
+- **Settings** - synchronous startup load (fixes a startup race), corrupt-file fallback, type coercion
+- **Tests** - real unit tests for command builders + settings, a non-skipped E2E launch smoke test
+- **CI/CD** - CI now runs on `master`, lint is a hard gate, plus a tag-triggered release pipeline that publishes installers for macOS, Windows, and Linux
+- **Docs** - Getting Started guide and clear unsigned-app first-launch instructions
+
+### v1.2.0
 - **Redesigned Preferences UI** - modern sidebar navigation with light/dark mode
 - **Migrated to TypeScript** with strict type checking
 - **Fixed all dialog issues** - Preferences, Add/Edit Bookmark now work correctly

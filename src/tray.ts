@@ -437,7 +437,13 @@ export function init(): void {
   }
 
   // Add system tray icon.
-  trayIndicator = new Tray(icons.default)
+  // Guard against environments without a system tray host (e.g. headless CI):
+  // a failure here should not crash the whole application.
+  try {
+    trayIndicator = new Tray(icons.default)
+  } catch (err) {
+    console.error('Failed to create tray indicator:', err)
+  }
 }
 
 export default { refresh, init }

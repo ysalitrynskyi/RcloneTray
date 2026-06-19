@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Create minimal mocks
+/**
+ * Real unit tests for the pure rclone command builders.
+ *
+ * These import the actual functions from src/rclone.ts (electron, fs, chokidar
+ * and the sibling modules are mocked) and assert on the produced argument arrays.
+ */
+
 const mockSettings: Record<string, unknown> = {
   custom_args: '',
   rclone_use_bundled: true,
@@ -20,6 +26,8 @@ vi.mock('electron', () => ({
     openExternal: vi.fn()
   }
 }))
+
+vi.mock('electron-is-dev', () => ({ default: false }))
 
 vi.mock('../../src/settings', () => ({
   get: vi.fn((key: string) => mockSettings[key]),
@@ -41,9 +49,7 @@ vi.mock('../../src/dialogs', () => ({
 
 vi.mock('chokidar', () => ({
   default: {
-    watch: vi.fn().mockReturnValue({
-      on: vi.fn().mockReturnThis()
-    })
+    watch: vi.fn().mockReturnValue({ on: vi.fn().mockReturnThis() })
   }
 }))
 
@@ -56,103 +62,141 @@ vi.mock('fs', () => ({
   mkdirSync: vi.fn()
 }))
 
-describe('Rclone Command Builders', () => {
-  describe('Custom Args Filtering', () => {
-    beforeEach(() => {
-      mockSettings.custom_args = ''
-    })
+import {
+  appendCustomRcloneCommandArgs,
+  buildServeCommand,
+  buildMountArgs,
+  enquoteCommand
+} from '../../src/rclone'
 
-    it('should filter out verbose flags -v', () => {
-      mockSettings.custom_args = '-v --some-flag'
-      // We would need to export the function to test it directly
-      // For now, this is a placeholder that demonstrates the test structure
-      expect(true).toBe(true)
-    })
-
-    it('should filter out verbose flags -vv', () => {
-      mockSettings.custom_args = '-vv --some-flag'
-      expect(true).toBe(true)
-    })
-
-    it('should filter out verbose flags -vvv', () => {
-      mockSettings.custom_args = '-vvv --some-flag'
-      expect(true).toBe(true)
-    })
-
-    it('should keep other flags', () => {
-      mockSettings.custom_args = '--transfers=4 --checkers=8'
-      expect(true).toBe(true)
-    })
-
-    it('should split args on newlines', () => {
-      mockSettings.custom_args = '--transfers=4\n--checkers=8'
-      expect(true).toBe(true)
-    })
-
-    it('should split args on spaces', () => {
-      mockSettings.custom_args = '--transfers=4 --checkers=8'
-      expect(true).toBe(true)
-    })
-
-    it('should handle empty custom_args', () => {
-      mockSettings.custom_args = ''
-      expect(true).toBe(true)
-    })
+describe('appendCustomRcloneCommandArgs', () => {
+  beforeEach(() => {
+    mockSettings.custom_args = ''
   })
 
-  describe('Serve Authentication', () => {
-    beforeEach(() => {
-      mockSettings.rclone_serving_username = ''
-      mockSettings.rclone_serving_password = ''
-    })
+  it('filters out -v, -vv and -vvv verbose flags', () => {
+    mockSettings.custom_args = '-v -vv -vvv --transfers=4'
+    const result = appendCustomRcloneCommandArgs(['mount'])
+    expect(result).not.toContain('-v')
+    expect(result).not.toContain('-vv')
+    expect(result).not.toContain('-vvv')
+    expect(result).toContain('--transfers=4')
+  })
 
-    it('should add --user flag when username is set', () => {
-      mockSettings.rclone_serving_username = 'testuser'
-      // Test would verify the command includes --user testuser
-      expect(true).toBe(true)
-    })
+  it('keeps non-verbose flags', () => {
+    mockSettings.custom_args = '--transfers=4 --checkers=8'
+    const result = appendCustomRcloneCommandArgs([])
+    expect(result).toEqual(['--transfers=4', '--checkers=8'])
+  })
 
-    it('should add --pass flag when password is set', () => {
-      mockSettings.rclone_serving_password = 'testpass'
-      // Test would verify the command includes --pass testpass
-      expect(true).toBe(true)
-    })
+  it('splits args on newlines as well as spaces', () => {
+    mockSettings.custom_args = '--transfers=4\n--checkers=8'
+    const result = appendCustomRcloneCommandArgs([])
+    expect(result).toEqual(['--transfers=4', '--checkers=8'])
+  })
 
-    it('should add both flags when both are set', () => {
-      mockSettings.rclone_serving_username = 'testuser'
-      mockSettings.rclone_serving_password = 'testpass'
-      // Test would verify the command includes both flags
-      expect(true).toBe(true)
-    })
+  it('returns the base command unchanged when custom_args is empty', () => {
+    mockSettings.custom_args = ''
+    const result = appendCustomRcloneCommandArgs(['mount', 'remote:'])
+    expect(result).toEqual(['mount', 'remote:'])
+  })
 
-    it('should not add flags when neither is set', () => {
-      // Test would verify no auth flags are present
-      expect(true).toBe(true)
-    })
+  it('drops empty/whitespace-only tokens', () => {
+    mockSettings.custom_args = '   '
+    const result = appendCustomRcloneCommandArgs(['serve'])
+    expect(result).toEqual(['serve'])
   })
 })
 
-describe('Types and Interfaces', () => {
-  describe('Bookmark', () => {
-    it('should have required properties', () => {
-      interface BookmarkTest {
-        $name: string
-        type: string
-      }
-      const bookmark: BookmarkTest = {
-        $name: 'test',
-        type: 's3'
-      }
-      expect(bookmark.$name).toBe('test')
-      expect(bookmark.type).toBe('s3')
-    })
+describe('buildServeCommand', () => {
+  beforeEach(() => {
+    mockSettings.rclone_serving_username = ''
+    mockSettings.rclone_serving_password = ''
+    mockSettings.rclone_cache_files = 3
+    mockSettings.rclone_cache_directories = 10
   })
 
-  describe('Settings', () => {
-    it('should have all required properties', () => {
-      expect(mockSettings).toHaveProperty('custom_args')
-      expect(mockSettings).toHaveProperty('rclone_use_bundled')
-    })
+  it('builds a basic http serve command with cache flags', () => {
+    const cmd = buildServeCommand('http', 'myremote:/')
+    expect(cmd.slice(0, 4)).toEqual(['serve', 'http', 'myremote:/', '-vv'])
+    expect(cmd).toContain('--attr-timeout')
+    expect(cmd).toContain('--dir-cache-time')
+  })
+
+  it('adds --user when a username is set', () => {
+    mockSettings.rclone_serving_username = 'alice'
+    const cmd = buildServeCommand('http', 'r:/')
+    const idx = cmd.indexOf('--user')
+    expect(idx).toBeGreaterThan(-1)
+    expect(cmd[idx + 1]).toBe('alice')
+  })
+
+  it('adds --pass when a password is set', () => {
+    mockSettings.rclone_serving_password = 's3cret'
+    const cmd = buildServeCommand('ftp', 'r:/')
+    const idx = cmd.indexOf('--pass')
+    expect(idx).toBeGreaterThan(-1)
+    expect(cmd[idx + 1]).toBe('s3cret')
+  })
+
+  it('adds both --user and --pass when both are set', () => {
+    mockSettings.rclone_serving_username = 'alice'
+    mockSettings.rclone_serving_password = 's3cret'
+    const cmd = buildServeCommand('webdav', 'r:/')
+    expect(cmd).toContain('--user')
+    expect(cmd).toContain('--pass')
+  })
+
+  it('omits auth flags when neither username nor password is set', () => {
+    const cmd = buildServeCommand('http', 'r:/')
+    expect(cmd).not.toContain('--user')
+    expect(cmd).not.toContain('--pass')
+  })
+
+  it('does not add cache flags for restic', () => {
+    const cmd = buildServeCommand('restic', 'r:/')
+    expect(cmd).not.toContain('--attr-timeout')
+    expect(cmd).not.toContain('--dir-cache-time')
+  })
+
+  it('omits --attr-timeout for webdav but keeps --dir-cache-time', () => {
+    const cmd = buildServeCommand('webdav', 'r:/')
+    expect(cmd).not.toContain('--attr-timeout')
+    expect(cmd).toContain('--dir-cache-time')
   })
 })
 
+describe('buildMountArgs', () => {
+  beforeEach(() => {
+    mockSettings.rclone_cache_files = 3
+    mockSettings.rclone_cache_directories = 10
+  })
+
+  it('builds a mount argument array', () => {
+    const args = buildMountArgs('myremote:/', '/mnt/point', 'myremote')
+    expect(args[0]).toBe('mount')
+    expect(args[1]).toBe('myremote:/')
+    expect(args[2]).toBe('/mnt/point')
+    expect(args).toContain('--allow-non-empty')
+    expect(args).toContain('--volname')
+    expect(args[args.indexOf('--volname') + 1]).toBe('myremote')
+    expect(args).toContain('-vv')
+  })
+
+  it('enforces a minimum cache time of 1 second', () => {
+    mockSettings.rclone_cache_files = 0
+    mockSettings.rclone_cache_directories = 0
+    const args = buildMountArgs('r:/', '/mnt', 'r')
+    expect(args[args.indexOf('--attr-timeout') + 1]).toBe('1s')
+    expect(args[args.indexOf('--dir-cache-time') + 1]).toBe('1s')
+  })
+})
+
+describe('enquoteCommand', () => {
+  it('quotes value arguments but leaves --flags untouched', () => {
+    const result = enquoteCommand(['mount', 'remote:/path with space', '--vv'])
+    expect(result[0]).toBe('"mount"')
+    expect(result[1]).toBe('"remote:/path with space"')
+    expect(result[2]).toBe('--vv')
+  })
+})

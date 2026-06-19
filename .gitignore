@@ -1,11 +1,11 @@
 .idea
-package-lock.json
 .experimental
 .DS_Store
 ._.*
 .env
 node_modules
 dist
+release
 bin/*
 rclone/*
 

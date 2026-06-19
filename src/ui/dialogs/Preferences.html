@@ -624,12 +624,12 @@
         setField('tray_menu_show_type', 'checked', trayMenuShowType !== false);
         setField('rclone_config', 'value', rcloneConfigFile || '');
         setField('rclone_use_bundled', 'checked', rcloneUseBundled !== false);
-        setField('rclone_cache_files', 'value', rcloneCacheFiles || 5);
-        setField('rclone_cache_directories', 'value', rcloneCacheDirectories || 5);
+        setField('rclone_cache_files', 'value', rcloneCacheFiles || 3);
+        setField('rclone_cache_directories', 'value', rcloneCacheDirectories || 10);
         setField('custom_args', 'value', customArgs || '');
         setField('rclone_ncdu_enable', 'checked', !!rcloneNcduEnable);
         setField('rclone_sync_enable', 'checked', !!rcloneSyncEnable);
-        setField('rclone_sync_autoupload_delay', 'value', rcloneSyncAutouploadDelay || 3);
+        setField('rclone_sync_autoupload_delay', 'value', rcloneSyncAutouploadDelay || 5);
         setField('rclone_serving_http_enable', 'checked', !!rcloneServingHttpEnable);
         setField('rclone_serving_ftp_enable', 'checked', !!rcloneServingFtpEnable);
         setField('rclone_serving_webdav_enable', 'checked', !!rcloneServingWebdavEnable);

@@ -184,10 +184,10 @@ contextBridge.exposeInMainWorld('htmlElements', {
       button.innerText = label
       button.onclick = function(): void {
         containerButtons.childNodes.forEach((item, index) => {
-          ;(item as HTMLElement).className = index === tabsTabIndex ? 'tab-button active' : 'tab-button'
+          (item as HTMLElement).className = index === tabsTabIndex ? 'tab-button active' : 'tab-button'
         })
         containerContents.childNodes.forEach((item, index) => {
-          ;(item as HTMLElement).style.display = index === tabsTabIndex ? '' : 'none'
+          (item as HTMLElement).style.display = index === tabsTabIndex ? '' : 'none'
         })
         window.electronAPI.resizeToContent()
       }

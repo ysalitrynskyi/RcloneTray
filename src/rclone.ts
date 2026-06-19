@@ -1,6 +1,6 @@
 'use strict'
 
-import { exec, execSync, spawn, ChildProcess } from 'child_process'
+import { execFile, execFileSync, exec, spawn, ChildProcess } from 'child_process'
 import * as os from 'os'
 import * as path from 'path'
 import * as fs from 'fs'
@@ -48,11 +48,27 @@ const BucketRequiredProviders: string[] = [
 const RcloneBinaryName: string = process.platform === 'win32' ? 'rclone.exe' : 'rclone'
 
 /**
- * Bundled Rclone path
+ * Map Node's process.arch values to the architecture folder names produced by
+ * update-rclone-binaries.sh (which uses rclone/Go naming). Without this mapping
+ * the bundled binary cannot be found on x64 (Node) vs amd64 (rclone) etc.
  */
-const RcloneBinaryBundled: string = app.isPackaged
-  ? path.join(process.resourcesPath, 'rclone', process.platform, process.arch, RcloneBinaryName)
-  : path.join(app.getAppPath(), 'rclone', process.platform, process.arch, RcloneBinaryName)
+const RcloneArchMap: Record<string, string> = {
+  x64: 'amd64',
+  ia32: '386',
+  arm64: 'arm64',
+  arm: 'arm-v7'
+}
+const RcloneBinaryArch: string = RcloneArchMap[process.arch] || process.arch
+
+/**
+ * Bundled Rclone path.
+ * Can be overridden with RCLONETRAY_RCLONE_PATH (useful for tests and power users).
+ */
+const RcloneBinaryBundled: string = process.env.RCLONETRAY_RCLONE_PATH
+  ? process.env.RCLONETRAY_RCLONE_PATH
+  : app.isPackaged
+    ? path.join(process.resourcesPath, 'rclone', process.platform, RcloneBinaryArch, RcloneBinaryName)
+    : path.join(app.getAppPath(), 'rclone', process.platform, RcloneBinaryArch, RcloneBinaryName)
 
 /**
  * System's temp directory
@@ -87,7 +103,7 @@ const AutomaticUploadRegistry: AutoUploadRegistryType = {}
 /**
  * Enquote command
  */
-function enquoteCommand(command: string[]): string[] {
+export function enquoteCommand(command: string[]): string[] {
   return command.map((arg) => {
     if (arg.substring(0, 2) !== '--') {
       return JSON.stringify(arg)
@@ -119,7 +135,7 @@ function prepareRcloneCommand(command: string[]): string[] {
 /**
  * Append custom rclone args to command array
  */
-function appendCustomRcloneCommandArgs(commandArray: string[], bookmarkName?: string): string[] {
+export function appendCustomRcloneCommandArgs(commandArray: string[], bookmarkName?: string): string[] {
   const verboseCommandStrPattern = /^-v+$/
   const filterOutVerboseArgs = (arg: string): boolean => {
     return !verboseCommandStrPattern.test(arg.trim())
@@ -147,16 +163,21 @@ function appendCustomRcloneCommandArgs(commandArray: string[], bookmarkName?: st
 }
 
 /**
- * Execute async Rclone command
+ * Maximum output buffer for rclone commands (config dump can be large)
+ */
+const RcloneExecMaxBuffer = 32 * 1024 * 1024
+
+/**
+ * Execute async Rclone command.
+ * Uses execFile (no shell) to avoid quoting/escaping bugs and shell injection.
  */
 function doCommand(command: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    let cmd = prepareRcloneCommand(command)
-    cmd = enquoteCommand(cmd)
+    const cmd = prepareRcloneCommand(command)
     if (isDev) {
       console.info('Rclone[A]', cmd)
     }
-    exec(cmd.join(' '), (err, stdout) => {
+    execFile(cmd[0], cmd.slice(1), { maxBuffer: RcloneExecMaxBuffer }, (err, stdout) => {
       if (err) {
         console.error('Rclone', err)
         reject(new Error('Rclone command error.'))
@@ -168,22 +189,22 @@ function doCommand(command: string[]): Promise<string> {
 }
 
 /**
- * Execute synchronious Rclone command and return the output
+ * Execute synchronious Rclone command and return the output.
+ * Uses execFileSync (no shell) to avoid quoting/escaping bugs and shell injection.
  */
 function doCommandSync(command: string[]): string {
-  let cmd = prepareRcloneCommand(command)
-  cmd = enquoteCommand(cmd)
+  const cmd = prepareRcloneCommand(command)
   if (isDev) {
     console.info('Rclone[S]', cmd)
   }
-  return execSync(cmd.join(' ')).toString()
+  return execFileSync(cmd[0], cmd.slice(1), { maxBuffer: RcloneExecMaxBuffer }).toString()
 }
 
 /**
  * Execute command in terminal
  */
 function doCommandInTerminal(command: string[]): void {
-  let cmd = enquoteCommand(command)
+  const cmd = enquoteCommand(command)
   const cmdStr = cmd.join(' ')
 
   if (isDev) {
@@ -784,6 +805,56 @@ function getBookmarkRemoteWithRoot(bookmark: Bookmark): string {
 }
 
 /**
+ * Build the rclone "mount" argument array (without the binary itself).
+ * Extracted as a pure-ish function for testability.
+ */
+export function buildMountArgs(remoteWithRoot: string, mountpoint: string, volname: string): string[] {
+  return [
+    'mount',
+    remoteWithRoot,
+    mountpoint,
+    '--attr-timeout', Math.max(1, parseInt(String(settings.get('rclone_cache_files')))) + 's',
+    '--dir-cache-time', Math.max(1, parseInt(String(settings.get('rclone_cache_directories')))) + 's',
+    '--allow-non-empty',
+    '--volname', volname,
+    '-vv'
+  ]
+}
+
+/**
+ * Build the rclone "serve" command array (without the binary itself).
+ * Includes cache and authentication flags based on current settings.
+ * Extracted as a pure-ish function for testability.
+ */
+export function buildServeCommand(protocol: ServeProtocol, remoteWithRoot: string): string[] {
+  const command = [
+    'serve',
+    protocol,
+    remoteWithRoot,
+    '-vv'
+  ]
+
+  if (protocol !== 'restic') {
+    if (protocol !== 'webdav') {
+      command.push('--attr-timeout', Math.max(1, parseInt(String(settings.get('rclone_cache_files')))) + 's')
+    }
+    command.push('--dir-cache-time', Math.max(1, parseInt(String(settings.get('rclone_cache_directories')))) + 's')
+  }
+
+  const servingUsername = settings.get('rclone_serving_username')
+  const servingPassword = settings.get('rclone_serving_password')
+
+  if (servingUsername) {
+    command.push('--user', servingUsername)
+  }
+  if (servingPassword) {
+    command.push('--pass', servingPassword)
+  }
+
+  return command
+}
+
+/**
  * Free directory that we use for mountpoints
  */
 function freeMountpointDirectory(directoryPath: string): boolean {
@@ -805,12 +876,18 @@ function freeMountpointDirectory(directoryPath: string): boolean {
  */
 function win32GetFreeLetter(): string {
   const allLetters = ['E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']
-  const usedDriveLettersOutput = execSync('wmic logicaldisk get name')
+  // `wmic` is deprecated/removed on recent Windows; use PowerShell instead.
+  const usedDriveLettersOutput = execFileSync('powershell.exe', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    '(Get-PSDrive -PSProvider FileSystem).Name'
+  ])
   const usedDriveLetters = usedDriveLettersOutput.toString()
-    .split(/\n/)
+    .split(/\r?\n/)
     .map((line) => {
-      const letter = line.trim().match(/^([A-Z]):/)
-      return letter ? letter[1] : null
+      const letter = line.trim().match(/^([A-Za-z])$/)
+      return letter ? letter[1].toUpperCase() : null
     })
     .filter((letter): letter is string => !!letter)
 
@@ -851,16 +928,7 @@ export function mount(bookmark: Bookmark | string): void {
     fs.mkdirSync(mountpoint)
   }
 
-  proc.create([
-    'mount',
-    getBookmarkRemoteWithRoot(bm),
-    mountpoint,
-    '--attr-timeout', Math.max(1, parseInt(String(settings.get('rclone_cache_files')))) + 's',
-    '--dir-cache-time', Math.max(1, parseInt(String(settings.get('rclone_cache_directories')))) + 's',
-    '--allow-non-empty',
-    '--volname', bm.$name,
-    '-vv'
-  ])
+  proc.create(buildMountArgs(getBookmarkRemoteWithRoot(bm), mountpoint, bm.$name))
   proc.set('mountpoint', mountpoint)
 
   if (process.platform === 'linux') {
@@ -1067,29 +1135,7 @@ export function serveStart(protocol: ServeProtocol, bookmark: Bookmark | string)
     throw new Error(`${bm.$name} is already serving.`)
   }
 
-  const command = [
-    'serve',
-    protocol,
-    getBookmarkRemoteWithRoot(bm),
-    '-vv'
-  ]
-
-  if (protocol !== 'restic') {
-    if (protocol !== 'webdav') {
-      command.push('--attr-timeout', Math.max(1, parseInt(String(settings.get('rclone_cache_files')))) + 's')
-    }
-    command.push('--dir-cache-time', Math.max(1, parseInt(String(settings.get('rclone_cache_directories')))) + 's')
-  }
-
-  const servingUsername = settings.get('rclone_serving_username')
-  const servingPassword = settings.get('rclone_serving_password')
-
-  if (servingUsername) {
-    command.push('--user', servingUsername)
-  }
-  if (servingPassword) {
-    command.push('--pass', servingPassword)
-  }
+  const command = buildServeCommand(protocol, getBookmarkRemoteWithRoot(bm))
 
   proc.create(command)
   proc.set('protocol', protocol)
@@ -1167,11 +1213,27 @@ export function init(): void {
     updateVersionCache()
   }
 
-  if (settings.get('rclone_config')) {
+  // Allow overriding the rclone config location via environment (used for tests
+  // and isolated profiles). RCLONETRAY_CONFIG_FILE wins over RCLONETRAY_CONFIG_DIR.
+  const envConfigFile = process.env.RCLONETRAY_CONFIG_FILE
+    ? process.env.RCLONETRAY_CONFIG_FILE
+    : process.env.RCLONETRAY_CONFIG_DIR
+      ? path.join(process.env.RCLONETRAY_CONFIG_DIR, 'rclone.conf')
+      : ''
+
+  if (envConfigFile) {
+    Cache.configFile = envConfigFile
+  } else if (settings.get('rclone_config')) {
     Cache.configFile = settings.get('rclone_config')
   } else {
     const output = doCommandSync(['config', 'file'])
     Cache.configFile = output.trim().split(/\r?\n/).pop() || ''
+  }
+
+  // Ensure the directory for the config file exists.
+  const configDir = path.dirname(getConfigFile())
+  if (configDir && !fs.existsSync(configDir)) {
+    fs.mkdirSync(configDir, { recursive: true })
   }
 
   if (!fs.existsSync(getConfigFile())) {

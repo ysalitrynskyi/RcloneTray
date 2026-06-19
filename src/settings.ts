@@ -2,18 +2,14 @@
 
 import * as path from 'path'
 import * as fs from 'fs/promises'
+import { readFileSync, existsSync, mkdirSync } from 'fs'
 import { app } from 'electron'
 import { Settings, SettingKey, SettingValue } from './types'
 
 /**
- * Path to settings.json file
+ * Default settings. Used both as initial cache and to restore on `remove`.
  */
-const settingsFile: string = path.join(app.getPath('userData'), 'settings.json')
-
-/**
- * Cache for current settings and predefine defaults.
- */
-const cache: Settings = {
+const DEFAULTS: Settings = {
   tray_menu_show_type: true,
   rclone_use_bundled: true,
   rclone_config: '',
@@ -30,6 +26,38 @@ const cache: Settings = {
   rclone_serving_webdav_enable: false,
   rclone_serving_username: '',
   rclone_serving_password: ''
+}
+
+/**
+ * Directory that holds settings.json.
+ * Can be overridden with RCLONETRAY_SETTINGS_DIR (used for tests/isolated profiles).
+ */
+const settingsDir: string = process.env.RCLONETRAY_SETTINGS_DIR || app.getPath('userData')
+
+/**
+ * Path to settings.json file
+ */
+const settingsFile: string = path.join(settingsDir, 'settings.json')
+
+/**
+ * Cache for current settings (starts from defaults).
+ */
+const cache: Settings = { ...DEFAULTS }
+
+/**
+ * Coerce an incoming value to the type of its default, so values coming from the
+ * renderer form (where numbers/booleans may arrive as strings) stay consistent.
+ */
+function coerceSettingValue<K extends SettingKey>(key: K, value: unknown): Settings[K] {
+  const defaultValue = DEFAULTS[key]
+  if (typeof defaultValue === 'boolean') {
+    return ([true, 'true', 1, '1', 'yes'].includes(value as string | number | boolean)) as Settings[K]
+  }
+  if (typeof defaultValue === 'number') {
+    const parsed = Number(value)
+    return (Number.isFinite(parsed) ? parsed : defaultValue) as Settings[K]
+  }
+  return (value == null ? '' : String(value)) as Settings[K]
 }
 
 /**
@@ -61,26 +89,8 @@ export function set<K extends SettingKey>(item: K, newValue: Settings[K]): void 
  */
 export function remove(item: SettingKey): boolean {
   if (has(item)) {
-    // Reset to default values based on type
-    const defaults: Settings = {
-      tray_menu_show_type: true,
-      rclone_use_bundled: true,
-      rclone_config: '',
-      custom_args: '',
-      rclone_cache_files: 3,
-      rclone_cache_directories: 10,
-      rclone_sync_enable: true,
-      rclone_sync_autoupload_delay: 5,
-      rclone_ncdu_enable: false,
-      rclone_serving_http_enable: false,
-      rclone_serving_ftp_enable: false,
-      rclone_serving_restic_enable: false,
-      rclone_serving_webdav_enable: false,
-      rclone_serving_username: '',
-      rclone_serving_password: ''
-    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(cache as any)[item] = defaults[item]
+    (cache as any)[item] = DEFAULTS[item]
     updateFile()
     return true
   }
@@ -96,7 +106,7 @@ export function merge(newSettings: Partial<Settings>): void {
     const k = key as SettingKey
     if (has(k)) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(cache as any)[k] = newSettings[k]
+      (cache as any)[k] = coerceSettingValue(k, newSettings[k])
     }
   })
   updateFile()
@@ -122,29 +132,36 @@ async function updateFile(): Promise<void> {
 }
 
 /**
- * Read the settings file and initialize the settings cache asynchronously.
+ * Read the settings file synchronously and initialize the settings cache.
+ *
+ * This is intentionally synchronous: other modules (e.g. rclone.init) read
+ * settings during app startup, so the cache must be populated before then.
+ * Corrupt or unreadable files fall back to defaults instead of crashing.
  */
-async function readFile(): Promise<void> {
+function readFileSyncInit(): void {
   try {
-    // Create the directory if not exists yet.
-    await fs.mkdir(app.getPath('userData'), { recursive: true })
+    if (!existsSync(settingsDir)) {
+      mkdirSync(settingsDir, { recursive: true })
+    }
 
-    // Check if the settings file exists before reading
-    try {
-      await fs.stat(settingsFile)
-      const content = await fs.readFile(settingsFile, 'utf-8')
-      const settings = JSON.parse(content) as Partial<Settings>
-      Object.assign(cache, settings)
-    } catch {
-      // File doesn't exist, use defaults
+    if (existsSync(settingsFile)) {
+      const content = readFileSync(settingsFile, 'utf-8')
+      const parsed = JSON.parse(content) as Partial<Settings>
+      Object.keys(parsed).forEach((key) => {
+        const k = key as SettingKey
+        if (has(k)) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (cache as any)[k] = coerceSettingValue(k, parsed[k])
+        }
+      })
     }
   } catch (err) {
-    console.error('Error reading settings file:', err)
+    console.error('Error reading settings file, using defaults:', err)
   }
 }
 
-// Initialize settings cache by reading the settings file.
-readFile()
+// Initialize settings cache by reading the settings file (synchronously).
+readFileSyncInit()
 
 export default { set, get, has, getAll, remove, merge }
 

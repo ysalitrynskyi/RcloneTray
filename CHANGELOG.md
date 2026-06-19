@@ -5,6 +5,48 @@ All notable changes to RcloneTray will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-06-19
+
+### Fixed
+- **Bundled rclone not found on x64/ia32** - the runtime path used Node's `process.arch`
+  (`x64`, `ia32`) while binaries are stored under rclone/Go names (`amd64`, `386`).
+  Added an architecture mapping so the bundled binary resolves correctly.
+- **Bundled rclone was never packaged** - the `extraResources` globs (`rclone/<os>/*`)
+  did not recurse into the per-architecture subfolders, so released apps shipped
+  without the bundled binary. Changed to `rclone/<os>/**`.
+- **Windows free-drive-letter detection** - replaced the deprecated/removed `wmic`
+  call with PowerShell (`Get-PSDrive`), restoring mount support on Windows 11.
+- **Settings startup race** - settings are now loaded synchronously at startup so
+  `rclone.init()` always sees the persisted config; corrupt files fall back to defaults.
+
+### Changed
+- **rclone commands run without a shell** - `doCommand`/`doCommandSync` now use
+  `execFile`/`execFileSync` instead of `exec` with hand-quoted strings, removing a
+  class of quoting/escaping bugs and shell-injection risk, and speeding up calls.
+- **Settings type coercion** - values coming from the renderer form (strings) are
+  coerced to their declared types (numbers/booleans) on merge.
+- **electron-builder output** moved to `release/` so installers no longer mix with
+  compiled JS in `dist/`.
+
+### Added
+- Environment overrides for isolated profiles / testing: `RCLONETRAY_RCLONE_PATH`,
+  `RCLONETRAY_CONFIG_FILE`, `RCLONETRAY_CONFIG_DIR`, `RCLONETRAY_SETTINGS_DIR`.
+- Real unit tests for the rclone command builders and the settings module, plus a
+  **non-skipped** E2E test that boots the app through Electron `ready` using a stub
+  rclone binary. `npm run test:coverage` added.
+- **Release pipeline** (`.github/workflows/release.yml`) triggered on `v*` tags:
+  matrix builds for macOS (x64 + arm64), Windows (x64/ia32/arm64), and Linux (x64),
+  uploading `.dmg`/`.zip`/`.exe`/`.AppImage`/`.deb` to a GitHub Release.
+- `docs/GETTING_STARTED.md`, `docs/AI_HANDOFF.md`, `SECURITY.md`, `CONTRIBUTING.md`,
+  Dependabot config, and a committed `package-lock.json` for reproducible `npm ci`.
+- `update-rclone-binaries.sh` accepts an optional platform argument
+  (`darwin`/`win32`/`linux`) for faster CI downloads.
+
+### CI
+- **Fixed branch triggers** - CI now runs on `master` (previously `main`/`develop`,
+  so it never ran). Lint is now a hard gate (removed `continue-on-error`).
+- E2E smoke test runs in CI under `xvfb`; removed the stale `.travis.yml`.
+
 ## [1.2.0] - 2024-12-16
 
 ### Added

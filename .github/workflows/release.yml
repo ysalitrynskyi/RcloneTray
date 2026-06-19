@@ -1,0 +1,128 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macOS
+            rclone: darwin
+            builder_args: --mac --x64 --arm64
+          - os: windows-latest
+            name: Windows
+            rclone: win32
+            builder_args: --win --x64 --ia32 --arm64
+          - os: ubuntu-latest
+            name: Linux
+            rclone: linux
+            builder_args: --linux --x64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Download rclone binaries (${{ matrix.rclone }})
+        shell: bash
+        run: ./update-rclone-binaries.sh ${{ matrix.rclone }}
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Package with electron-builder
+        run: npx electron-builder ${{ matrix.builder_args }} --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.rclone }}
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.exe
+            release/*.AppImage
+            release/*.deb
+          if-no-files-found: warn
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all installer artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifacts
+        run: |
+          mkdir -p dist-release
+          find artifacts -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' \) -exec cp {} dist-release/ \;
+          ls -la dist-release
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-release/*
+          generate_release_notes: true
+          body: |
+            ## RcloneTray ${{ github.ref_name }}
+
+            System-tray GUI for [Rclone](https://rclone.org/) — mount, sync, and serve your remotes.
+
+            ### Install
+
+            | Platform | File |
+            |----------|------|
+            | macOS (Intel + Apple Silicon) | `.dmg` / `.zip` |
+            | Windows (x64 / ia32 / arm64) | `.exe` (NSIS installer) |
+            | Linux (x64) | `.AppImage`, `.deb` |
+
+            ### macOS first launch (unsigned app)
+
+            RcloneTray is **not** signed with an Apple Developer ID ($99/year — this app is free).
+            After installing from the `.dmg`, macOS may block it with *"Apple could not verify…"*. This is normal for free, unsigned open-source apps.
+
+            One-time fix (Terminal):
+
+            ```bash
+            xattr -d com.apple.quarantine /Applications/RcloneTray.app
+            ```
+
+            Or right-click the app → **Open** → **Open**. See
+            [Getting Started](https://github.com/ysalitrynskyi/RcloneTray/blob/master/docs/GETTING_STARTED.md) for the full walkthrough.
+
+            ### Windows
+
+            SmartScreen may warn about an unknown publisher — click **More info → Run anyway**.
+
+            ### Linux
+
+            Make the AppImage executable before running: `chmod +x RcloneTray-*.AppImage`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

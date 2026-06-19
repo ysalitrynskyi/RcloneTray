@@ -1,50 +1,39 @@
-import { test, expect, _electron as electron, ElectronApplication, Page } from '@playwright/test'
+import { test, expect, _electron as electron, ElectronApplication } from '@playwright/test'
 import * as path from 'path'
 import * as fs from 'fs'
 import * as os from 'os'
 
 /**
- * E2E Tests for RcloneTray Electron Application
- * 
- * These tests require:
- * 1. The app to be built (npm run build)
- * 2. A mock rclone binary or the real rclone installed
- * 
- * Run with: npm run test:e2e
+ * E2E tests for the RcloneTray Electron application.
+ *
+ * A stub rclone binary (tests/e2e/fixtures/rclone-stub.sh) is injected via
+ * RCLONETRAY_RCLONE_PATH so the app can boot without a real rclone install or
+ * network access. Config/settings are redirected to a throwaway temp directory.
+ *
+ * The launch smoke test is skipped on Windows (the shell stub is POSIX-only) and
+ * when the build output is missing.
  */
 
-// Test configuration
-const TEST_MODE = process.env.RCLONETRAY_TEST === '1'
 const TEST_DATA_DIR = path.join(os.tmpdir(), 'rclonetray-e2e-test')
+const RCLONE_STUB = path.join(__dirname, 'fixtures', 'rclone-stub.sh')
+const MAIN_JS = path.join(__dirname, '../../dist/main.js')
 
-// Helper to create test directories
-function setupTestDirectories() {
+function setupTestDirectories(): void {
   if (fs.existsSync(TEST_DATA_DIR)) {
     fs.rmSync(TEST_DATA_DIR, { recursive: true })
   }
-  fs.mkdirSync(TEST_DATA_DIR, { recursive: true })
   fs.mkdirSync(path.join(TEST_DATA_DIR, 'config'), { recursive: true })
   fs.mkdirSync(path.join(TEST_DATA_DIR, 'settings'), { recursive: true })
 }
 
-// Helper to clean up test directories
-function cleanupTestDirectories() {
+function cleanupTestDirectories(): void {
   if (fs.existsSync(TEST_DATA_DIR)) {
     fs.rmSync(TEST_DATA_DIR, { recursive: true })
   }
 }
 
-test.describe('RcloneTray Application', () => {
-  let electronApp: ElectronApplication
-
-  test.beforeAll(async () => {
-    // Skip tests if not in test mode or missing dependencies
-    if (!TEST_MODE) {
-      test.skip()
-    }
-    
-    setupTestDirectories()
-  })
+test.describe('RcloneTray Application launch', () => {
+  let electronApp: ElectronApplication | undefined
 
   test.afterAll(async () => {
     if (electronApp) {
@@ -53,131 +42,65 @@ test.describe('RcloneTray Application', () => {
     cleanupTestDirectories()
   })
 
-  test.skip('should launch the application', async () => {
-    // This test is skipped by default as it requires the full app to be running
-    // Enable it by setting RCLONETRAY_TEST=1
-    
-    const appPath = path.join(__dirname, '../../dist/main.js')
-    
+  test('boots through app "ready" without crashing', async () => {
+    test.skip(process.platform === 'win32', 'POSIX shell stub not supported on Windows')
+    test.skip(!fs.existsSync(MAIN_JS), 'dist/main.js missing — run "npm run build" first')
+
+    setupTestDirectories()
+    fs.chmodSync(RCLONE_STUB, 0o755)
+
     electronApp = await electron.launch({
-      args: [appPath],
+      args: [MAIN_JS],
       env: {
         ...process.env,
         RCLONETRAY_TEST: '1',
+        RCLONETRAY_RCLONE_PATH: RCLONE_STUB,
         RCLONETRAY_CONFIG_DIR: path.join(TEST_DATA_DIR, 'config'),
-        RCLONETRAY_SETTINGS_DIR: path.join(TEST_DATA_DIR, 'settings'),
+        RCLONETRAY_SETTINGS_DIR: path.join(TEST_DATA_DIR, 'settings')
       }
     })
-    
-    // Wait for app to be ready
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    
-    // Get the first window (if any opened)
-    const windows = electronApp.windows()
-    expect(windows.length).toBeGreaterThanOrEqual(0) // Tray apps may have no windows initially
+
+    // The app reaches the Electron "ready" state (main process booted, tray init,
+    // rclone init via the stub) without throwing.
+    const isReady = await electronApp.evaluate(async ({ app }) => {
+      if (app.isReady()) return true
+      await app.whenReady()
+      return app.isReady()
+    })
+    expect(isReady).toBe(true)
+
+    // rclone.init() creates an (empty) config file in the isolated config dir.
+    const configFile = path.join(TEST_DATA_DIR, 'config', 'rclone.conf')
+    await expect.poll(() => fs.existsSync(configFile), { timeout: 5000 }).toBe(true)
   })
 })
 
-test.describe('Preferences Dialog', () => {
-  test.skip('should open preferences dialog', async () => {
-    // This would test opening the preferences dialog
-    // Requires Electron app to be running
+test.describe('Build artifacts smoke', () => {
+  test('compiled main entry exists', () => {
+    expect(fs.existsSync(MAIN_JS)).toBe(true)
   })
 
-  test.skip('should save settings', async () => {
-    // This would test saving settings in preferences
-  })
-
-  test.skip('should show restart required dialog', async () => {
-    // This would test the restart required functionality
-  })
-})
-
-test.describe('Add Bookmark Dialog', () => {
-  test.skip('should open add bookmark dialog', async () => {
-    // This would test opening the add bookmark dialog
-  })
-
-  test.skip('should show provider options when selected', async () => {
-    // This would test provider selection
-  })
-
-  test.skip('should create a new bookmark', async () => {
-    // This would test bookmark creation
-  })
-})
-
-test.describe('Edit Bookmark Dialog', () => {
-  test.skip('should open edit bookmark dialog', async () => {
-    // This would test opening the edit bookmark dialog
-  })
-
-  test.skip('should load existing bookmark data', async () => {
-    // This would test loading bookmark data
-  })
-
-  test.skip('should update bookmark', async () => {
-    // This would test bookmark updating
-  })
-
-  test.skip('should delete bookmark after confirmation', async () => {
-    // This would test bookmark deletion with confirmation
-  })
-})
-
-test.describe('Tray Menu', () => {
-  test.skip('should show bookmarks in tray menu', async () => {
-    // This would test tray menu bookmark listing
-  })
-
-  test.skip('should update menu after bookmark changes', async () => {
-    // This would test menu refresh
-  })
-
-  test.skip('should show connected indicator when mounted', async () => {
-    // This would test connected state indication
-  })
-})
-
-// Placeholder tests that can be expanded
-test.describe('Smoke Tests', () => {
-  test('TypeScript build should succeed', async () => {
-    // This verifies the build output exists
-    const distPath = path.join(__dirname, '../../dist/main.js')
-    const exists = fs.existsSync(distPath)
-    expect(exists).toBe(true)
-  })
-
-  test('HTML dialogs should exist', async () => {
+  test('HTML dialogs exist', () => {
     const dialogsPath = path.join(__dirname, '../../src/ui/dialogs')
-    
-    expect(fs.existsSync(path.join(dialogsPath, 'About.html'))).toBe(true)
-    expect(fs.existsSync(path.join(dialogsPath, 'Preferences.html'))).toBe(true)
-    expect(fs.existsSync(path.join(dialogsPath, 'AddBookmark.html'))).toBe(true)
-    expect(fs.existsSync(path.join(dialogsPath, 'EditBookmark.html'))).toBe(true)
+    for (const f of ['About.html', 'Preferences.html', 'AddBookmark.html', 'EditBookmark.html']) {
+      expect(fs.existsSync(path.join(dialogsPath, f))).toBe(true)
+    }
   })
 
-  test('CSS files should exist', async () => {
+  test('CSS files exist', () => {
     const stylesPath = path.join(__dirname, '../../src/ui/styles')
-    
     expect(fs.existsSync(path.join(stylesPath, 'ui.css'))).toBe(true)
     expect(fs.existsSync(path.join(stylesPath, 'about.css'))).toBe(true)
   })
 
-  test('Icons should exist for all platforms', async () => {
+  test('tray icons exist for all platforms', () => {
     const iconsPath = path.join(__dirname, '../../src/ui/icons')
-    
-    // macOS template icons
-    expect(fs.existsSync(path.join(iconsPath, 'iconTemplate.png'))).toBe(true)
-    expect(fs.existsSync(path.join(iconsPath, 'icon-connectedTemplate.png'))).toBe(true)
-    
-    // Windows icons
-    expect(fs.existsSync(path.join(iconsPath, 'icon.ico'))).toBe(true)
-    expect(fs.existsSync(path.join(iconsPath, 'icon-connected.ico'))).toBe(true)
-    
-    // Linux/generic icons
-    expect(fs.existsSync(path.join(iconsPath, 'icon.png'))).toBe(true)
-    expect(fs.existsSync(path.join(iconsPath, 'icon-connected.png'))).toBe(true)
+    for (const f of [
+      'iconTemplate.png', 'icon-connectedTemplate.png',
+      'icon.ico', 'icon-connected.ico',
+      'icon.png', 'icon-connected.png'
+    ]) {
+      expect(fs.existsSync(path.join(iconsPath, f))).toBe(true)
+    }
   })
 })
-
