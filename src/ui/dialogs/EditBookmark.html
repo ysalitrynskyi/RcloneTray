@@ -193,11 +193,11 @@
 
       } catch (error) {
         console.error('Failed to load bookmark:', error);
-        bookmarkSettingsWrapper.innerHTML = `
-          <div style="padding: 40px; text-align: center; color: #ff3b30;">
-            Failed to load bookmark: ${error.message || error}
-          </div>
-        `;
+        bookmarkSettingsWrapper.textContent = '';
+        const errDiv = document.createElement('div');
+        errDiv.style.cssText = 'padding: 40px; text-align: center; color: #ff3b30;';
+        errDiv.textContent = 'Failed to load bookmark: ' + (error.message || error);
+        bookmarkSettingsWrapper.appendChild(errDiv);
       }
     })();
   </script>

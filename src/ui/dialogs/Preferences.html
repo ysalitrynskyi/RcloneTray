@@ -706,7 +706,11 @@
 
       } catch (error) {
         console.error('Failed to load preferences:', error);
-        loadingEl.innerHTML = '<div class="error">Failed to load preferences:<br>' + (error.message || error) + '</div>';
+        loadingEl.textContent = '';
+        const errDiv = document.createElement('div');
+        errDiv.className = 'error';
+        errDiv.textContent = 'Failed to load preferences: ' + (error.message || error);
+        loadingEl.appendChild(errDiv);
       }
     });
   </script>
