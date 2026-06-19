@@ -15,6 +15,7 @@ import {
   BookmarksCache,
   ProvidersCache,
   Provider,
+  ProviderOption,
   RcloneCache,
   ProcessRegistry,
   ProcessRegistryEntry,
@@ -70,6 +71,8 @@ const RcloneBinaryBundled: string = process.env.RCLONETRAY_RCLONE_PATH
     ? path.join(process.resourcesPath, 'rclone', process.platform, RcloneBinaryArch, RcloneBinaryName)
     : path.join(app.getAppPath(), 'rclone', process.platform, RcloneBinaryArch, RcloneBinaryName)
 
+let bundledRclonePrepared = false
+
 /**
  * System's temp directory
  */
@@ -116,20 +119,62 @@ export function enquoteCommand(command: string[]): string[] {
  * Prepare array to Rclone command, rclone binary should be ommited
  */
 function prepareRcloneCommand(command: string[]): string[] {
+  const appendAutoConfirm = shouldAppendAutoConfirm(command)
   const config = getConfigFile()
   if (config) {
     command.unshift('--config', config)
   }
 
   if (settings.get('rclone_use_bundled')) {
+    prepareBundledRcloneBinary()
     command.unshift(RcloneBinaryBundled)
   } else {
     command.unshift(RcloneBinaryName)
   }
 
-  command.push('--auto-confirm')
+  if (appendAutoConfirm) {
+    command.push('--auto-confirm')
+  }
 
   return command
+}
+
+export function shouldAppendAutoConfirm(command: string[]): boolean {
+  const [scope, action] = command
+  if (scope === 'version') {
+    return false
+  }
+  if (scope === 'config' && ['dump', 'providers', 'file'].includes(action || '')) {
+    return false
+  }
+  return true
+}
+
+function prepareBundledRcloneBinary(): void {
+  if (bundledRclonePrepared) {
+    return
+  }
+
+  if (!fs.existsSync(RcloneBinaryBundled)) {
+    throw new Error(`Bundled rclone binary not found: ${RcloneBinaryBundled}`)
+  }
+
+  if (process.platform !== 'win32') {
+    fs.chmodSync(RcloneBinaryBundled, 0o755)
+  }
+
+  if (process.platform === 'darwin') {
+    try {
+      execFileSync('/usr/bin/xattr', ['-dr', 'com.apple.quarantine', path.dirname(RcloneBinaryBundled)], {
+        stdio: 'ignore'
+      })
+    } catch {
+      // No quarantine attribute or no xattr permission. Let the real rclone
+      // launch error drive the user-facing message.
+    }
+  }
+
+  bundledRclonePrepared = true
 }
 
 /**
@@ -692,8 +737,37 @@ export function getBookmarks(): BookmarksCache {
 /**
  * Check if bookmark options are valid
  */
-function validateBookmarkOptions(providerObject: Provider, values: Record<string, string>): void {
+export function isProviderOptionActive(optionDefinition: ProviderOption, values: Record<string, unknown>): boolean {
+  if (optionDefinition.Hide) {
+    return false
+  }
+
+  if (!optionDefinition.Provider) {
+    return true
+  }
+
+  const invert = optionDefinition.Provider.startsWith('!')
+  const rules = (invert ? optionDefinition.Provider.substring(1) : optionDefinition.Provider)
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+  const activeValues = Object.values(values).map((value) => String(value))
+  const match = rules.some((rule) => activeValues.includes(rule))
+  return invert ? !match : match
+}
+
+function toRcloneOptionValue(value: unknown): string {
+  if (value === undefined || value === null) {
+    return ''
+  }
+  return String(value)
+}
+
+function validateBookmarkOptions(providerObject: Provider, values: Record<string, unknown>): void {
   providerObject.Options.forEach((optionDefinition) => {
+    if (!isProviderOptionActive(optionDefinition, values)) {
+      return
+    }
     const fieldName = optionDefinition.$Label || optionDefinition.Name
     if (optionDefinition.Required && (!Object.prototype.hasOwnProperty.call(values, optionDefinition.Name) || !values[optionDefinition.Name])) {
       throw new Error(`${fieldName} field is required`)
@@ -704,23 +778,31 @@ function validateBookmarkOptions(providerObject: Provider, values: Record<string
 /**
  * Update existing bookmark's fields
  */
-function updateBookmarkFields(bookmarkName: string, providerObject: Provider, values: Record<string, string>, oldValues?: Record<string, string>): void {
+function updateBookmarkFields(bookmarkName: string, providerObject: Provider, values: Record<string, unknown>, oldValues?: Record<string, unknown>): void {
   const valuesPlain: Record<string, string> = {}
 
   providerObject.Options.forEach((optionDefinition) => {
+    const hasSubmittedValue = Object.prototype.hasOwnProperty.call(values, optionDefinition.Name)
+    if (!hasSubmittedValue && !isProviderOptionActive(optionDefinition, values)) {
+      return
+    }
+
     if (optionDefinition.$Type === 'password') {
-      if (!oldValues || oldValues[optionDefinition.Name] !== values[optionDefinition.Name]) {
-        doCommandSync(['config', 'password', bookmarkName, optionDefinition.Name, values[optionDefinition.Name] || ''])
+      const newValue = toRcloneOptionValue(values[optionDefinition.Name])
+      const oldValue = toRcloneOptionValue(oldValues?.[optionDefinition.Name])
+      if (!oldValues || oldValue !== newValue) {
+        doCommandSync(['config', 'password', bookmarkName, optionDefinition.Name, newValue])
       }
     } else {
       if (optionDefinition.$Type === 'boolean') {
         if (optionDefinition.Name in values && ['true', 'yes', true, 1].includes(values[optionDefinition.Name] as unknown as string | number | boolean)) {
-          values[optionDefinition.Name] = 'true'
+          valuesPlain[optionDefinition.Name] = 'true'
         } else {
-          values[optionDefinition.Name] = 'false'
+          valuesPlain[optionDefinition.Name] = 'false'
         }
+      } else if (hasSubmittedValue) {
+        valuesPlain[optionDefinition.Name] = toRcloneOptionValue(values[optionDefinition.Name])
       }
-      valuesPlain[optionDefinition.Name] = values[optionDefinition.Name]
     }
   })
 
@@ -741,7 +823,7 @@ function updateBookmarkFields(bookmarkName: string, providerObject: Provider, va
 /**
  * Create new bookmark
  */
-export async function addBookmark(type: string, bookmarkName: string, values: Record<string, string>): Promise<void> {
+export async function addBookmark(type: string, bookmarkName: string, values: Record<string, unknown>): Promise<void> {
   const providerObject = getProvider(type)
   const configFile = getConfigFile()
 
@@ -783,12 +865,12 @@ export async function addBookmark(type: string, bookmarkName: string, values: Re
 /**
  * Update existing bookmark
  */
-export async function updateBookmark(bookmark: Bookmark | string, values: Record<string, string>): Promise<void> {
+export async function updateBookmark(bookmark: Bookmark | string, values: Record<string, unknown>): Promise<void> {
   const bm = getBookmark(bookmark)
   const providerObject = getProvider(bm.type)
   validateBookmarkOptions(providerObject, values)
 
-  updateBookmarkFields(bm.$name, providerObject, values, bm as unknown as Record<string, string>)
+  updateBookmarkFields(bm.$name, providerObject, values, bm as unknown as Record<string, unknown>)
   await updateBookmarksCache()
   dialogs.notification(`Bookmark ${bm.$name} is updated.`)
 }
@@ -1234,8 +1316,17 @@ export function init(): void {
   try {
     updateVersionCache()
   } catch (err) {
-    dialogs.missingRclone()
-    updateVersionCache()
+    const choice = dialogs.missingRclone(err)
+    if (choice !== 1) {
+      return
+    }
+    bundledRclonePrepared = false
+    try {
+      updateVersionCache()
+    } catch (retryErr) {
+      dialogs.missingRclone(retryErr)
+      return
+    }
   }
 
   // Allow overriding the rclone config location via environment (used for tests

@@ -130,15 +130,15 @@ export type IPCChannels = {
   
   // Settings
   'get-setting': { args: [key: SettingKey]; return: SettingValue }
-  'settings-merge': { args: [data: Partial<Settings>]; return: void }
+  'settings-merge': { args: [data: Partial<Settings>]; return: void | Promise<void> }
   'settings-get': { args: [key: SettingKey]; return: SettingValue }
   
   // Rclone
   'get-rclone-version': { args: []; return: string }
   'get-rclone-providers': { args: []; return: ProvidersCache | Promise<ProvidersCache> }
-  'get-rclone-book': { args: [type: string, name: string, options: Record<string, string>]; return: void }
+  'get-rclone-book': { args: [type: string, name: string, options: Record<string, unknown>]; return: void }
   'get-rclone-delete-book': { args: [name: string]; return: void }
-  'get-rclone-update-book': { args: [name: string, options: Record<string, string>]; return: void }
+  'get-rclone-update-book': { args: [name: string, options: Record<string, unknown>]; return: void }
   'get-rclone-get-config-file': { args: []; return: string }
   'rclone-get-config': { args: []; return: BookmarksCache }
   'get-provider-data': { args: [providerName: string]; return: Provider }

@@ -11,6 +11,24 @@ import { DialogWindow, SettingKey, Settings } from './types'
 
 // Error handler
 
+function getFocusedWindow(): BrowserWindow | undefined {
+  return BrowserWindow.getFocusedWindow() || undefined
+}
+
+function showMessageBox(options: Electron.MessageBoxOptions): Promise<Electron.MessageBoxReturnValue> {
+  const focusedWindow = getFocusedWindow()
+  return focusedWindow
+    ? dialog.showMessageBox(focusedWindow, options)
+    : dialog.showMessageBox(options)
+}
+
+function showOpenDialog(options: Electron.OpenDialogOptions): Promise<Electron.OpenDialogReturnValue> {
+  const focusedWindow = getFocusedWindow()
+  return focusedWindow
+    ? dialog.showOpenDialog(focusedWindow, options)
+    : dialog.showOpenDialog(options)
+}
+
 ipcMain.handle('get-app-path', () => app.getAppPath())
 ipcMain.handle('get-app-name', () => app.getName())
 ipcMain.handle('get-app-version', () => app.getVersion())
@@ -35,7 +53,7 @@ ipcMain.handle('get-rclone-providers', () => {
   return rclone.getProviders()
 })
 
-ipcMain.handle('get-rclone-book', (_event: IpcMainInvokeEvent, type: string, name: string, options: Record<string, string>) => {
+ipcMain.handle('get-rclone-book', (_event: IpcMainInvokeEvent, type: string, name: string, options: Record<string, unknown>) => {
   return rclone.addBookmark(type, name, options)
 })
 
@@ -43,7 +61,7 @@ ipcMain.handle('get-rclone-delete-book', (_event: IpcMainInvokeEvent, name: stri
   return rclone.deleteBookmark(name)
 })
 
-ipcMain.handle('get-rclone-update-book', (_event: IpcMainInvokeEvent, name: string, options: Record<string, string>) => {
+ipcMain.handle('get-rclone-update-book', (_event: IpcMainInvokeEvent, name: string, options: Record<string, unknown>) => {
   return rclone.updateBookmark(name, options)
 })
 
@@ -95,8 +113,7 @@ ipcMain.on('popup-context-menu', (_event: IpcMainEvent, menuTemplate: Electron.M
 })
 
 ipcMain.handle('show-message-box', async (_event: IpcMainInvokeEvent, { message }: { message: string }) => {
-  const focusedWindow = BrowserWindow.getFocusedWindow()
-  const response = await dialog.showMessageBox(focusedWindow as BrowserWindow, {
+  const response = await showMessageBox({
     message,
     buttons: ['OK']
   })
@@ -104,8 +121,7 @@ ipcMain.handle('show-message-box', async (_event: IpcMainInvokeEvent, { message 
 })
 
 ipcMain.handle('confirm-dialog', async (_event: IpcMainInvokeEvent, { message }: { message: string }) => {
-  const focusedWindow = BrowserWindow.getFocusedWindow()
-  const response = await dialog.showMessageBox(focusedWindow as BrowserWindow, {
+  const response = await showMessageBox({
     type: 'question',
     buttons: ['Yes', 'No'],
     defaultId: 0,
@@ -135,8 +151,7 @@ ipcMain.on('resize-window', (_event: IpcMainEvent, newHeight: number) => {
 })
 
 ipcMain.handle('select-directory', async (_event: IpcMainInvokeEvent, { defaultDirectory }: { defaultDirectory?: string }) => {
-  const focusedWindow = BrowserWindow.getFocusedWindow()
-  const result = await dialog.showOpenDialog(focusedWindow as BrowserWindow, {
+  const result = await showOpenDialog({
     title: 'Select Directory',
     defaultPath: defaultDirectory || app.getPath('home'),
     properties: ['openDirectory', 'createDirectory']
@@ -150,8 +165,7 @@ ipcMain.handle('select-directory', async (_event: IpcMainInvokeEvent, { defaultD
 })
 
 ipcMain.handle('select-file', async (_event: IpcMainInvokeEvent, defaultFile?: string) => {
-  const window = BrowserWindow.getFocusedWindow()
-  const { filePaths } = await dialog.showOpenDialog(window as BrowserWindow, {
+  const { filePaths } = await showOpenDialog({
     title: 'Select File',
     defaultPath: defaultFile || app.getPath('home'),
     properties: ['openFile', 'showHiddenFiles']
@@ -258,4 +272,3 @@ app.on('before-quit', rclone.prepareQuit)
 app.on('window-all-closed', function (event: Electron.Event) {
   event.preventDefault()
 })
-

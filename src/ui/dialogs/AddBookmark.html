@@ -15,6 +15,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <input type="text" id="provider-search" placeholder="Search — Drive, S3, SFTP, WebDAV…" autocomplete="off" spellcheck="false">
       </div>
+      <p class="picker-hint">Prefer the command line? Run <code>rclone config</code> in Terminal — any remotes you create there show up here automatically.</p>
     </div>
     <ul class="provider-list" id="provider-list">
       <li class="state">Loading providers…</li>
@@ -31,7 +32,10 @@
         </button>
         <div class="config-id">
           <div class="avatar" id="config-avatar"></div>
-          <h1 id="config-name">Provider</h1>
+          <div class="config-text">
+            <h1 id="config-name">Provider</h1>
+            <p id="config-description"></p>
+          </div>
         </div>
       </div>
 
@@ -124,9 +128,11 @@
       function selectProvider(type) {
         const provider = providers[type];
         if (!provider) return;
-        const label = provider.Description || type;
+        const label = provider.Name || type;
+        const description = provider.Description || '';
         document.title = `New ${provider.Name || type} bookmark`;
         document.getElementById('config-name').textContent = label;
+        document.getElementById('config-description').textContent = description;
         const avatar = document.getElementById('config-avatar');
         avatar.style.background = colorFor(type);
         avatar.textContent = (label || type)[0];

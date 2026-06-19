@@ -39,6 +39,12 @@ download_and_extract() {
     unzip -q "${tmp_dir}/${os}-${arch}.zip" -d "${tmp_dir}/${os}-${arch}"
     mv "${tmp_dir}/${os}-${arch}/rclone-"*"/rclone"* "${bin_dir}/${bin_folder}/${arch}/"
     chmod +x "${bin_dir}/${bin_folder}/${arch}/rclone"*
+    if [ "${bin_folder}" = "darwin" ]; then
+        xattr -dr com.apple.quarantine "${bin_dir}/${bin_folder}/${arch}" 2>/dev/null || true
+        if command -v codesign >/dev/null 2>&1; then
+            codesign --force --sign - "${bin_dir}/${bin_folder}/${arch}/rclone" 2>/dev/null || true
+        fi
+    fi
 }
 
 # Optional first argument limits the download to a single target platform.

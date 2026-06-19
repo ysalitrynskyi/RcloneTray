@@ -191,6 +191,11 @@ var {
   width: 16px; height: 16px; color: var(--text-3); pointer-events: none;
 }
 .search-wrap input { padding-left: 34px; }
+.picker-hint { margin-top: 10px; font-size: 11.5px; line-height: 1.45; color: var(--text-3); }
+.picker-hint code, var, code {
+  font-family: var(--mono); font-size: 11.5px;
+  padding: 1px 5px; border-radius: 5px; background: var(--surface-2); color: var(--text-2);
+}
 .provider-list { list-style: none; overflow-y: auto; flex: 1; min-height: 0; padding: var(--s2) var(--s3) var(--s4); }
 .provider-item {
   display: flex; align-items: center; gap: var(--s3); padding: 9px 11px;
@@ -209,7 +214,16 @@ var {
   padding: var(--s4) var(--s5); border-bottom: 1px solid var(--border-soft);
 }
 .config-id { display: flex; align-items: center; gap: var(--s3); min-width: 0; }
-.config-header h1, .header h1 { font-size: 16px; font-weight: 700; letter-spacing: -0.2px; }
+.config-text { min-width: 0; }
+.config-header h1, .header h1 {
+  font-size: 16px; font-weight: 700; letter-spacing: -0.2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.config-text p {
+  max-width: 64ch; margin-top: 2px; color: var(--text-2); font-size: 11.5px;
+  line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden;
+}
 .back-btn {
   background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
   padding: 6px 11px 6px 8px; font-size: 12px; gap: 4px; flex: none;

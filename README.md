@@ -4,7 +4,9 @@
 [![CI](https://github.com/ysalitrynskyi/RcloneTray/workflows/CI/badge.svg)](https://github.com/ysalitrynskyi/RcloneTray/actions)
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/ysalitrynskyi?style=social)](https://github.com/sponsors/ysalitrynskyi)
 
-A simple, cross-platform desktop app that lives in your system tray and gives [Rclone](https://rclone.org/) a graphical interface. Mount, sync, and serve your cloud storage without touching the command line — a free alternative to [Mountain Duck](https://mountainduck.io/).
+A simple desktop app that lives in your system tray and gives [Rclone](https://rclone.org/) a graphical interface. Mount, sync, and serve your cloud storage without touching the command line — a free alternative to [Mountain Duck](https://mountainduck.io/).
+
+> **Platform support:** RcloneTray is developed and tested primarily on **macOS**. Windows and Linux builds are provided and should work, but are **not actively tested** — if something breaks there, please [open an issue](https://github.com/ysalitrynskyi/RcloneTray/issues). Pull requests are welcome.
 
 ![Screenshot](https://raw.githubusercontent.com/ysalitrynskyi/RcloneTray/master/screenshot.png)
 
@@ -16,6 +18,7 @@ A simple, cross-platform desktop app that lives in your system tray and gives [R
 - [Requirements](#requirements)
 - [Usage](#usage)
 - [FAQ](#faq)
+- [Troubleshooting](#troubleshooting)
 - [Development](#development)
 - [Changelog](#changelog)
 - [Contributing](#contributing)
@@ -93,8 +96,17 @@ If you would rather not install a FUSE driver, use the WebDAV serve feature inst
 1. Launch RcloneTray — it starts in your system tray.
 2. Open the tray menu and choose **New Bookmark**.
 3. Pick a provider (Amazon S3, Google Drive, Dropbox, and so on).
-4. Enter your credentials and settings.
+4. Enter your credentials and settings (only the **Name** is required up front; the
+   provider-specific fields like bucket, access key, region, and so on appear once you
+   pick a provider).
 5. Mount, sync, or serve the remote from the tray menu.
+
+**Prefer the terminal?** You don't have to use the dialog at all. Run `rclone config`
+in your terminal to create or edit remotes — RcloneTray reads the same
+`rclone.conf`, so anything you configure there shows up in the tray automatically
+(and vice-versa). Advanced and provider-specific flags are also available under
+**Advanced** in the bookmark dialog, and global flags under **Preferences → Rclone →
+Custom args**.
 
 ## FAQ
 
@@ -130,6 +142,50 @@ RcloneTray uses the default Rclone location:
 - Windows: `%APPDATA%\rclone\rclone.conf`
 - macOS: `~/.config/rclone/rclone.conf`
 - Linux: `~/.config/rclone/rclone.conf`
+</details>
+
+## Troubleshooting
+
+<details>
+<summary><b>I picked S3 (or another provider) but only see the Name field.</b></summary>
+
+This was a bug fixed in v1.6.0 — update to the latest release. The provider-specific
+fields (bucket, access key, region, etc.) now render as soon as you select a provider.
+If a field still seems missing, it's likely hidden because it only applies to a
+specific sub-provider; choose the matching **Provider** value and it will appear.
+</details>
+
+<details>
+<summary><b>macOS: "RcloneTray can't be opened" / "Apple could not verify…"</b></summary>
+
+RcloneTray is free and unsigned (an Apple Developer ID costs $99/year). macOS
+quarantines unsigned apps. Either right-click the app → **Open** → **Open**, or run
+once in Terminal:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/RcloneTray.app
+```
+</details>
+
+<details>
+<summary><b>The bundled Rclone won't start (macOS).</b></summary>
+
+The same Gatekeeper quarantine can block the bundled `rclone` helper. RcloneTray now
+tries to clear the quarantine attribute automatically on first run. If it still
+fails, either run the `xattr` command above, or open **Preferences → Rclone**,
+uncheck **Use bundled Rclone**, and install Rclone yourself:
+
+```bash
+brew install rclone   # macOS (Homebrew)
+```
+</details>
+
+<details>
+<summary><b>Nothing happens / an error pops up when I create a bookmark.</b></summary>
+
+Errors from Rclone are now surfaced in the dialog instead of being swallowed. Read
+the message — it usually points at a missing required field. You can always fall back
+to `rclone config` in the terminal to create the remote, then it appears in the tray.
 </details>
 
 ## Development
@@ -177,6 +233,7 @@ rclone/               Bundled rclone binaries
 
 Recent highlights — see [CHANGELOG.md](CHANGELOG.md) for the full history.
 
+- **v1.6.0** — Fixed provider forms showing only the Name field (S3 and others now render all fields); provider-specific options correctly show/hide per sub-provider; bundled Rclone auto-repairs macOS quarantine; cleaner dialog header; terminal/`rclone config` guidance in-app and in the docs. macOS is the primary tested platform.
 - **v1.5.1** — Fixed bookmark creation silently failing: errors (like a missing required S3 bucket) are now shown in the dialog instead of the window just closing.
 - **v1.5.0** — Reliability pass (clearer errors, safer add/update/delete, native file-manager open); unified `ui.css` design system with form-field fixes; platform-aware "Show in Finder/Explorer/Files" labels.
 - **v1.4.2** — Adding a remote now appears in the tray immediately; brand icon restored and modernized; larger Preferences window; working About buttons.

@@ -95,6 +95,13 @@ jobs:
 
             System-tray GUI for [Rclone](https://rclone.org/) — mount, sync, and serve your remotes.
 
+            ### Platform support
+
+            **RcloneTray is developed and tested primarily on macOS.** Windows and Linux
+            builds are provided and should work, but they are **not actively tested**. If you
+            hit a problem on Windows or Linux, please [open an issue](https://github.com/ysalitrynskyi/RcloneTray/issues)
+            (and PRs are very welcome).
+
             ### Install
 
             | Platform | File |

@@ -5,6 +5,44 @@ All notable changes to RcloneTray will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-06-19
+
+The big fix: provider forms (S3 and others) only showed the **Name** field. Plus a
+round of macOS robustness work and friendlier, more discoverable guidance.
+
+### Fixed
+- **Provider forms only showed the Name field.** The option show/hide logic matched
+  every provider-gated field against a single shared value (overwritten as each field
+  rendered), which hid almost everything for providers like Amazon S3. Field
+  dependencies are now tracked per field and evaluated against all current form values,
+  so bucket, access key, region, endpoint and the rest render correctly — and
+  sub-provider-specific fields appear/disappear as you change the **Provider** selector.
+- **Bundled Rclone blocked by macOS Gatekeeper.** On unsigned builds the quarantine
+  attribute could stop the bundled `rclone` helper from launching. RcloneTray now
+  clears the quarantine attribute and marks the helper executable on first use, and the
+  release binaries are de-quarantined and ad-hoc codesigned at build time.
+- **Oversized dialog header.** The provider's long description was used as the title
+  (a huge wall of text for S3). The header now shows the short provider name with the
+  description as a clamped subtitle.
+- **`--auto-confirm` on read-only startup commands.** It's no longer appended to
+  `version` / `config providers|dump|file`, which could interfere with parsing.
+
+### Added
+- **Provider-dependency aware validation/saving.** Required-field checks and config
+  writes now skip options that don't apply to the selected sub-provider, and only
+  submitted/active values are written.
+- **In-app and docs guidance for the terminal.** The Add Remote picker notes you can
+  run `rclone config` in a terminal (remotes appear in the tray automatically), and the
+  README gained a Troubleshooting section plus usage notes.
+- **Dialogs reuse the focused window** for native message/open dialogs, with a safe
+  fallback when there's no focused window.
+- Unit tests for `shouldAppendAutoConfirm` and `isProviderOptionActive`.
+
+### Notes
+- **macOS is the primary, actively tested platform.** Windows and Linux builds are
+  provided and should work but are not actively tested — please open an issue if you
+  hit problems there.
+
 ## [1.5.1] - 2026-06-19
 
 ### Fixed

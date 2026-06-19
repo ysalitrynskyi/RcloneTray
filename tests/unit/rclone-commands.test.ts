@@ -67,7 +67,9 @@ import {
   appendCustomRcloneCommandArgs,
   buildServeCommand,
   buildMountArgs,
-  enquoteCommand
+  enquoteCommand,
+  isProviderOptionActive,
+  shouldAppendAutoConfirm
 } from '../../src/rclone'
 
 describe('appendCustomRcloneCommandArgs', () => {
@@ -216,5 +218,47 @@ describe('enquoteCommand', () => {
     expect(result[0]).toBe('"mount"')
     expect(result[1]).toBe('"remote:/path with space"')
     expect(result[2]).toBe('--vv')
+  })
+})
+
+describe('shouldAppendAutoConfirm', () => {
+  it('does not add --auto-confirm to read-only startup commands', () => {
+    expect(shouldAppendAutoConfirm(['version'])).toBe(false)
+    expect(shouldAppendAutoConfirm(['config', 'providers'])).toBe(false)
+    expect(shouldAppendAutoConfirm(['config', 'dump'])).toBe(false)
+    expect(shouldAppendAutoConfirm(['config', 'file'])).toBe(false)
+  })
+
+  it('keeps --auto-confirm for commands that can prompt', () => {
+    expect(shouldAppendAutoConfirm(['config', 'delete', 'remote'])).toBe(true)
+    expect(shouldAppendAutoConfirm(['mount', 'remote:', '/tmp/mount'])).toBe(true)
+  })
+})
+
+describe('isProviderOptionActive', () => {
+  const baseOption = {
+    Name: 'endpoint',
+    Help: '',
+    Required: false,
+    Advanced: false,
+    Hide: false
+  }
+
+  it('keeps options without dependency active', () => {
+    expect(isProviderOptionActive(baseOption, {})).toBe(true)
+  })
+
+  it('hides options marked hidden', () => {
+    expect(isProviderOptionActive({ ...baseOption, Hide: true }, { provider: 'AWS' })).toBe(false)
+  })
+
+  it('matches provider dependency against current form values', () => {
+    expect(isProviderOptionActive({ ...baseOption, Provider: 'AWS,Minio' }, { provider: 'AWS' })).toBe(true)
+    expect(isProviderOptionActive({ ...baseOption, Provider: 'AWS,Minio' }, { provider: 'Other' })).toBe(false)
+  })
+
+  it('supports inverted provider dependency rules', () => {
+    expect(isProviderOptionActive({ ...baseOption, Provider: '!AWS' }, { provider: 'Other' })).toBe(true)
+    expect(isProviderOptionActive({ ...baseOption, Provider: '!AWS' }, { provider: 'AWS' })).toBe(false)
   })
 })

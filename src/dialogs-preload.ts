@@ -28,6 +28,46 @@ interface DependencyItem {
   row: HTMLElement
 }
 
+const optionFieldDependencyRegistry: DependencyItem[] = []
+const optionFieldDependencyValues: Record<string, string> = {}
+
+function resetOptionFieldDependencies(): void {
+  optionFieldDependencyRegistry.length = 0
+  Object.keys(optionFieldDependencyValues).forEach((key) => {
+    delete optionFieldDependencyValues[key]
+  })
+}
+
+function addOptionFieldDependency(item: DependencyItem): void {
+  optionFieldDependencyRegistry.push(item)
+}
+
+function selectOptionFieldDependencies(): void {
+  const activeValues = Object.values(optionFieldDependencyValues)
+  optionFieldDependencyRegistry.forEach((depItem: DependencyItem) => {
+    const invert = depItem.rule.startsWith('!')
+    const rule = (invert ? depItem.rule.substring(1) : depItem.rule).split(',').map((item) => item.trim())
+    let match = rule.some((item) => activeValues.includes(item))
+    match = invert ? !match : match
+    if (match) {
+      depItem.row.style.display = ''
+      depItem.row.querySelectorAll('input,textarea,select').forEach((inputEl) => {
+        (inputEl as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).disabled = false
+      })
+    } else {
+      depItem.row.style.display = 'none'
+      depItem.row.querySelectorAll('input,textarea,select').forEach((inputEl) => {
+        (inputEl as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).disabled = true
+      })
+    }
+  })
+}
+
+function setOptionFieldDependencyValue(key: string, value: string): void {
+  optionFieldDependencyValues[key] = value
+  selectOptionFieldDependencies()
+}
+
 function createHelpTextElement(help: string): HTMLDivElement {
   const fieldHelpText = document.createElement('div')
   const urlPattern = /\b(https?|ftp|file):\/\/[-A-Z0-9+&@#/%?=~_|!:,.]*[-A-Z0-9+&@#/%=~_|]/ig
@@ -60,6 +100,17 @@ function createHelpTextElement(help: string): HTMLDivElement {
   return fieldHelpText
 }
 
+function resizeToContentWindow(): void {
+  let newHeight = document.body.scrollHeight + (window.outerHeight - window.innerHeight)
+  if (newHeight > window.screen.height * 0.85) {
+    newHeight = Math.ceil(window.screen.height * 0.85)
+    document.body.style.overflow = ''
+  } else {
+    document.body.style.overflow = 'hidden'
+  }
+  ipcRenderer.send('resize-window', newHeight)
+}
+
 // Extend Window interface
 declare global {
   interface Window {
@@ -85,6 +136,7 @@ declare global {
       registry: DependencyItem[]
       add: (item: DependencyItem) => void
       select: (value: string) => void
+      clear: () => void
     }
     api: {
       renderBookmarkSettings: (placeholderOrId: string | HTMLElement, providerName: string, values?: { options?: Record<string, unknown> }) => void
@@ -149,16 +201,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   notification: (message: string): void => {
     ipcRenderer.send('show-notification', { message })
   },
-  resizeToContent: (): void => {
-    let newHeight = document.body.scrollHeight + (window.outerHeight - window.innerHeight)
-    if (newHeight > window.screen.height * 0.85) {
-      newHeight = Math.ceil(window.screen.height * 0.85)
-      document.body.style.overflow = ''
-    } else {
-      document.body.style.overflow = 'hidden'
-    }
-    ipcRenderer.send('resize-window', newHeight)
-  },
+  resizeToContent: resizeToContentWindow,
   selectDirectory: async (defaultDirectory?: string): Promise<string | null> => {
     return await ipcRenderer.invoke('select-directory', { defaultDirectory })
   },
@@ -184,7 +227,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   }
 })
 
-contextBridge.exposeInMainWorld('htmlElements', {
+const htmlElementsApi = {
   createTabsElement(): TabsElement {
     const container = document.createElement('div') as TabsElement
     const containerButtons = document.createElement('div')
@@ -208,7 +251,7 @@ contextBridge.exposeInMainWorld('htmlElements', {
         containerContents.childNodes.forEach((item, index) => {
           (item as HTMLElement).style.display = index === tabsTabIndex ? '' : 'none'
         })
-        window.electronAPI.resizeToContent()
+        resizeToContentWindow()
       }
 
       const contentWrapper = document.createElement('div')
@@ -233,7 +276,7 @@ contextBridge.exposeInMainWorld('htmlElements', {
     const container = document.createDocumentFragment()
 
     optionFields.forEach((fieldDefinition) => {
-      const optionField = this.createOptionField(
+      const optionField = htmlElementsApi.createOptionField(
         fieldDefinition,
         optionFieldsNamespace,
         Object.prototype.hasOwnProperty.call(values, fieldDefinition.Name) ? values[fieldDefinition.Name] : null
@@ -318,7 +361,7 @@ contextBridge.exposeInMainWorld('htmlElements', {
     row.appendChild(td)
 
     if (optionFieldDefinition.Provider) {
-      window.optionFieldDependencies.add({
+      addOptionFieldDependency({
         rule: optionFieldDefinition.Provider,
         row: row
       })
@@ -345,12 +388,12 @@ contextBridge.exposeInMainWorld('htmlElements', {
       browseButton.addEventListener('click', async (event) => {
         event.preventDefault()
         if (browseType === 'directory') {
-          const selectedPath = await window.electronAPI.selectDirectory(inputField.value)
+          const selectedPath = await ipcRenderer.invoke('select-directory', { defaultDirectory: inputField.value }) as string | null
           if (selectedPath) {
             inputField.value = selectedPath
           }
         } else {
-          const selectedPaths = await window.electronAPI.selectFile(inputField.value)
+          const selectedPaths = await ipcRenderer.invoke('select-file', inputField.value) as string[]
           if (selectedPaths && selectedPaths.length > 0) {
             inputField.value = selectedPaths[0]
           }
@@ -393,19 +436,18 @@ contextBridge.exposeInMainWorld('htmlElements', {
             })
           }
         })
-        window.electronAPI.popupContextMenu(menuTemplate)
+        ipcRenderer.send('popup-context-menu', menuTemplate)
       })
     }
 
     // Trigger provider's show/hide
-    inputField.addEventListener('change', function(this: HTMLInputElement) {
-      const dependencyValue = this.type === 'checkbox' ? String(this.checked) : this.value
-      window.optionFieldDependencies.select(dependencyValue)
-    })
-    const initialDependencyValue = inputField.type === 'checkbox'
-      ? String((inputField as HTMLInputElement).checked)
-      : inputField.value
-    window.optionFieldDependencies.select(initialDependencyValue)
+    const dependencyValueKey = inputField.name || inputField.id
+    const updateDependencyValue = function(this: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): void {
+      const dependencyValue = this.type === 'checkbox' ? String((this as HTMLInputElement).checked) : this.value
+      setOptionFieldDependencyValue(dependencyValueKey, dependencyValue)
+    }
+    inputField.addEventListener('change', updateDependencyValue)
+    updateDependencyValue.call(inputField)
 
     // Flag that indicate app requires restart when form is saved.
     if (optionFieldDefinition.$RequireRestart) {
@@ -439,31 +481,20 @@ contextBridge.exposeInMainWorld('htmlElements', {
 
     return row
   }
-})
+}
+
+contextBridge.exposeInMainWorld('htmlElements', htmlElementsApi)
 
 contextBridge.exposeInMainWorld('optionFieldDependencies', {
   registry: [] as DependencyItem[],
   add(item: DependencyItem): void {
-    this.registry.push(item)
+    addOptionFieldDependency(item)
   },
   select(value: string): void {
-    this.registry.forEach((depItem: DependencyItem) => {
-      const invert = depItem.rule.startsWith('!')
-      const rule = (invert ? depItem.rule.substring(1) : depItem.rule).split(',')
-      let match = rule.includes(value)
-      match = invert ? !match : match
-      if (match) {
-        depItem.row.style.display = ''
-        depItem.row.querySelectorAll('input,textarea,select').forEach((inputEl) => {
-          (inputEl as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).disabled = false
-        })
-      } else {
-        depItem.row.style.display = 'none'
-        depItem.row.querySelectorAll('input,textarea,select').forEach((inputEl) => {
-          (inputEl as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).disabled = true
-        })
-      }
-    })
+    setOptionFieldDependencyValue('__external__', value)
+  },
+  clear(): void {
+    resetOptionFieldDependencies()
   }
 })
 
@@ -483,70 +514,86 @@ contextBridge.exposeInMainWorld('api', {
       normalizedValues.options = {}
     }
 
-    // Send an IPC message to the main process to retrieve the provider data
-    ipcRenderer.once('provider-data-reply', (_event, provider: ProviderData | null) => {
-      const placeholderEl = typeof placeholderOrId === 'string'
+    const getPlaceholder = (): HTMLElement | null => {
+      return typeof placeholderOrId === 'string'
         ? document.getElementById(placeholderOrId)
         : placeholderOrId
+    }
 
-      if (!provider || !Array.isArray(provider.Options)) {
-        if (placeholderEl) {
-          const range = document.createRange()
-          range.selectNodeContents(placeholderEl)
-          range.deleteContents()
-          const msg = document.createElement('div')
-          msg.style.cssText = 'padding:20px;color:#ff3b30;font-size:12px;'
-          msg.textContent = 'Could not load settings for this provider. Please try again.'
-          placeholderEl.appendChild(msg)
-          window.electronAPI.resizeToContent()
-        }
+    const renderError = (message: string): void => {
+      const placeholderEl = getPlaceholder()
+      if (!placeholderEl) {
         return
       }
+      const range = document.createRange()
+      range.selectNodeContents(placeholderEl)
+      range.deleteContents()
+      const msg = document.createElement('div')
+      msg.style.cssText = 'padding:20px;color:#ff3b30;font-size:12px;'
+      msg.textContent = message
+      placeholderEl.appendChild(msg)
+      resizeToContentWindow()
+    }
 
-      window.optionFieldDependencies.registry.length = 0
-      const visibleOptions = provider.Options.filter((item) => item.Hide !== true)
-
-      const connectionFields = visibleOptions.filter((item) => {
-        return item.Name !== '_rclonetray_local_path_map' && item.Advanced !== true
-      })
-
-      const advancedFields = visibleOptions.filter((item) => {
-        return item.Name !== '_rclonetray_local_path_map' && item.Advanced === true
-      })
-
-      const mappingFields = visibleOptions.filter((item) => {
-        return item.Name === '_rclonetray_local_path_map'
-      })
-
-      // Asynchronously create the tabs element using a method exposed from another part of your contextBridge
-      const tabs = window.htmlElements.createTabsElement()
-
-      if (connectionFields.length) {
-        tabs.addTab('Connection', window.htmlElements.createOptionsFields(connectionFields, 'options', normalizedValues.options))
-      }
-
-      if (advancedFields.length) {
-        tabs.addTab('Advanced', window.htmlElements.createOptionsFields(advancedFields, 'options', normalizedValues.options))
-      }
-
-      ipcRenderer.invoke('get-setting', 'rclone_sync_enable').then((syncEnable) => {
-        if (syncEnable && mappingFields.length) {
-          tabs.addTab('Mappings', window.htmlElements.createOptionsFields(mappingFields, 'options', normalizedValues.options))
+    // Send an IPC message to the main process to retrieve the provider data
+    ipcRenderer.once('provider-data-reply', (_event, provider: ProviderData | null) => {
+      try {
+        if (!provider || !Array.isArray(provider.Options)) {
+          renderError('Could not load settings for this provider. Please try again.')
+          return
         }
 
-        // Support both element ID (string) and DOM element
-        const placeholder = typeof placeholderOrId === 'string'
-          ? document.getElementById(placeholderOrId)
-          : placeholderOrId
+        resetOptionFieldDependencies()
+        const visibleOptions = provider.Options.filter((item) => item.Hide !== true)
 
-        if (placeholder) {
-          const range = document.createRange()
-          range.selectNodeContents(placeholder)
-          range.deleteContents()
-          placeholder.appendChild(tabs)
-          window.electronAPI.resizeToContent()
+        const connectionFields = visibleOptions.filter((item) => {
+          return item.Name !== '_rclonetray_local_path_map' && item.Advanced !== true
+        })
+
+        const advancedFields = visibleOptions.filter((item) => {
+          return item.Name !== '_rclonetray_local_path_map' && item.Advanced === true
+        })
+
+        const mappingFields = visibleOptions.filter((item) => {
+          return item.Name === '_rclonetray_local_path_map'
+        })
+
+        // Asynchronously create the tabs element using a method exposed from another part of your contextBridge
+        const tabs = htmlElementsApi.createTabsElement()
+
+        if (connectionFields.length) {
+          tabs.addTab('Connection', htmlElementsApi.createOptionsFields(connectionFields, 'options', normalizedValues.options))
         }
-      })
+
+        if (advancedFields.length) {
+          tabs.addTab('Advanced', htmlElementsApi.createOptionsFields(advancedFields, 'options', normalizedValues.options))
+        }
+
+        ipcRenderer.invoke('get-setting', 'rclone_sync_enable')
+          .then((syncEnable) => {
+            if (syncEnable && mappingFields.length) {
+              tabs.addTab('Mappings', htmlElementsApi.createOptionsFields(mappingFields, 'options', normalizedValues.options))
+            }
+
+            // Support both element ID (string) and DOM element
+            const placeholder = getPlaceholder()
+
+            if (placeholder) {
+              const range = document.createRange()
+              range.selectNodeContents(placeholder)
+              range.deleteContents()
+              placeholder.appendChild(tabs)
+              resizeToContentWindow()
+            }
+          })
+          .catch((error) => {
+            console.error('Failed to render provider settings:', error)
+            renderError('Could not render settings for this provider. Please try again.')
+          })
+      } catch (error) {
+        console.error('Failed to render provider settings:', error)
+        renderError('Could not render settings for this provider. Please try again.')
+      }
     })
 
     ipcRenderer.send('get-provider-data', providerName)
