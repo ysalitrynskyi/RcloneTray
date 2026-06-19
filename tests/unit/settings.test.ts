@@ -81,8 +81,8 @@ describe('Settings Module', () => {
   })
 
   describe('merge', () => {
-    it('merges multiple settings at once', () => {
-      settings.merge({
+    it('merges multiple settings at once', async () => {
+      await settings.merge({
         tray_menu_show_type: false,
         rclone_cache_files: 20,
         rclone_serving_http_enable: true
@@ -92,27 +92,27 @@ describe('Settings Module', () => {
       expect(settings.get('rclone_serving_http_enable')).toBe(true)
     })
 
-    it('does not affect unrelated settings', () => {
+    it('does not affect unrelated settings', async () => {
       const original = settings.get('rclone_use_bundled')
-      settings.merge({ tray_menu_show_type: false })
+      await settings.merge({ tray_menu_show_type: false })
       expect(settings.get('rclone_use_bundled')).toBe(original)
     })
 
-    it('ignores unknown keys', () => {
-      settings.merge({ not_a_real_setting: 'x' } as never)
+    it('ignores unknown keys', async () => {
+      await settings.merge({ not_a_real_setting: 'x' } as never)
       expect(settings.has('not_a_real_setting' as never)).toBe(false)
     })
 
-    it('coerces string numbers into numbers (renderer sends strings)', () => {
-      settings.merge({ rclone_cache_files: '42' as never })
+    it('coerces string numbers into numbers (renderer sends strings)', async () => {
+      await settings.merge({ rclone_cache_files: '42' as never })
       expect(settings.get('rclone_cache_files')).toBe(42)
       expect(typeof settings.get('rclone_cache_files')).toBe('number')
     })
 
-    it('coerces truthy strings into booleans', () => {
-      settings.merge({ rclone_serving_http_enable: 'true' as never })
+    it('coerces truthy strings into booleans', async () => {
+      await settings.merge({ rclone_serving_http_enable: 'true' as never })
       expect(settings.get('rclone_serving_http_enable')).toBe(true)
-      settings.merge({ rclone_serving_http_enable: 'false' as never })
+      await settings.merge({ rclone_serving_http_enable: 'false' as never })
       expect(settings.get('rclone_serving_http_enable')).toBe(false)
     })
   })

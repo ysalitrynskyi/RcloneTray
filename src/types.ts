@@ -135,7 +135,7 @@ export type IPCChannels = {
   
   // Rclone
   'get-rclone-version': { args: []; return: string }
-  'get-rclone-providers': { args: []; return: ProvidersCache }
+  'get-rclone-providers': { args: []; return: ProvidersCache | Promise<ProvidersCache> }
   'get-rclone-book': { args: [type: string, name: string, options: Record<string, string>]; return: void }
   'get-rclone-delete-book': { args: [name: string]; return: void }
   'get-rclone-update-book': { args: [name: string, options: Record<string, string>]; return: void }
@@ -171,4 +171,3 @@ export interface DialogWindow extends Electron.BrowserWindow {
   $props?: DialogProps
   setSizeAsync?: (width: number, height: number) => void
 }
-

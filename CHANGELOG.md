@@ -5,6 +5,35 @@ All notable changes to RcloneTray will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-06-19
+
+Incorporates and finalizes a round of code-review changes from two other reviewers,
+plus fixes a styling regression those changes introduced.
+
+### Added
+- **Unified `ui.css` design system** — shared OKLCH tokens, light/dark, form controls,
+  tabs, rows, tips and spinner — so every dialog stays visually consistent.
+
+### Changed
+- **More reliable error reporting.** Rclone command failures now surface the actual
+  `stderr` detail instead of a generic "Rclone command error".
+- **Bookmark add/update/delete are fully async/await** with proper rollback if writing
+  options fails, and the bookmarks/providers caches now reject (and log) on failure.
+- **Open folders via `shell.openPath`** instead of `file://` URLs — opens the native
+  file manager more reliably across platforms.
+- **Platform-aware menu labels** — "Show in Finder/Explorer/Files" depending on OS.
+- Providers are now lazy-loaded on first request.
+- Settings `merge()` is async, persists atomically, and ensures the config dir exists.
+- Dialog stylesheets load synchronously (via `<link>`), removing the earlier
+  flash-of-unstyled / wrong-font race entirely.
+
+### Fixed
+- **Form fields with checkboxes now save correctly** (boolean values), select fields
+  match their stored value reliably, `number` inputs render, and hidden provider
+  options are filtered out.
+- **Restored dialog layout styling** that was lost when the inline styles were removed
+  — the Add Remote picker, Edit Bookmark, and their headers/footers are styled again.
+
 ## [1.4.2] - 2026-06-19
 
 ### Fixed

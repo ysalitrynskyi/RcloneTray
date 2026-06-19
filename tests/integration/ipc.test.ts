@@ -37,15 +37,15 @@ describe('settings IPC contract (real module)', () => {
     expect(settings.get('rclone_use_bundled')).toBe(true)
   })
 
-  it('settings-merge applies a partial update and persists', () => {
+  it('settings-merge applies a partial update and persists', async () => {
     // Mirrors: ipcMain.handle('settings-merge', (_e, data) => settings.merge(data))
-    settings.merge({ rclone_serving_ftp_enable: true, rclone_serving_username: 'bob' })
+    await settings.merge({ rclone_serving_ftp_enable: true, rclone_serving_username: 'bob' })
     expect(settings.get('rclone_serving_ftp_enable')).toBe(true)
     expect(settings.get('rclone_serving_username')).toBe('bob')
   })
 
-  it('settings-merge round-trips form string values into typed settings', () => {
-    settings.merge({
+  it('settings-merge round-trips form string values into typed settings', async () => {
+    await settings.merge({
       rclone_cache_files: '7' as never,
       rclone_use_bundled: 'false' as never
     })

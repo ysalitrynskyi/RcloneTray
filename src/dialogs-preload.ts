@@ -124,26 +124,7 @@ contextBridge.exposeInMainWorld('$main', {
   })(),
   setAutostart: (state: boolean): void => { ipcRenderer.send('set-autostart', state) },
   isAutostart: (): Promise<boolean> => ipcRenderer.invoke('is-autostart'),
-  getProps: (): Promise<Record<string, unknown>> => ipcRenderer.invoke('get-props'),
-  loadStyles: async function(): Promise<void> {
-    const appPath = await ipcRenderer.invoke('get-app-path') as string
-    const uiLink = document.createElement('link')
-    uiLink.rel = 'stylesheet'
-    uiLink.href = `${appPath}/src/ui/styles/ui.css`
-    document.head.appendChild(uiLink)
-
-    const platformLink = document.createElement('link')
-    platformLink.rel = 'stylesheet'
-    platformLink.href = `${appPath}/src/ui/styles/ui-${process.platform}.css`
-    document.head.appendChild(platformLink)
-  },
-  loadAboutStyles: async function(): Promise<void> {
-    const appPath = await ipcRenderer.invoke('get-app-path') as string
-    const aboutLink = document.createElement('link')
-    aboutLink.rel = 'stylesheet'
-    aboutLink.href = `${appPath}/src/ui/styles/about.css`
-    document.head.appendChild(aboutLink)
-  }
+  getProps: (): Promise<Record<string, unknown>> => ipcRenderer.invoke('get-props')
 })
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -184,12 +165,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     Array.from(form.elements).forEach(element => {
       const el = element as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
       if (el.name && !el.disabled && !(el.type === 'radio' && !(el as HTMLInputElement).checked)) {
+        const fieldValue = el.type === 'checkbox' ? (el as HTMLInputElement).checked : el.value
         const [namespace, name] = el.name.split('.')
         if (namespace && name) {
           if (!values[namespace]) values[namespace] = {}
-          ;(values[namespace] as Record<string, string>)[name] = el.value
+          ;(values[namespace] as Record<string, unknown>)[name] = fieldValue
         } else {
-          values[el.name] = el.value
+          values[el.name] = fieldValue
         }
       }
     })
@@ -267,7 +249,7 @@ contextBridge.exposeInMainWorld('htmlElements', {
     value?: unknown
   ): HTMLDivElement {
     if (value === undefined || value === null) {
-      value = optionFieldDefinition.Value
+      value = optionFieldDefinition.Value ?? optionFieldDefinition.Default
     }
 
     const row = document.createElement('div')
@@ -287,7 +269,7 @@ contextBridge.exposeInMainWorld('htmlElements', {
             const option = document.createElement('option')
             option.value = String(item.Value)
             option.innerText = item.Label || String(item.Value)
-            if (value === item.Value) option.selected = true
+            if (String(value) === String(item.Value)) option.selected = true
             inputField.appendChild(option)
           })
         }
@@ -297,6 +279,7 @@ contextBridge.exposeInMainWorld('htmlElements', {
         inputField.type = 'checkbox'
         ;(inputField as HTMLInputElement).checked = [true, 'true', 1, '1'].includes(value as string | number | boolean)
         break
+      case 'number':
       case 'numeric':
         inputField = document.createElement('input')
         inputField.type = 'number'
@@ -343,7 +326,7 @@ contextBridge.exposeInMainWorld('htmlElements', {
     }
     inputField.id = 'field_' + optionFieldDefinition.Name
     if ('placeholder' in inputField) {
-      inputField.placeholder = String(optionFieldDefinition.Default || '')
+      inputField.placeholder = String(optionFieldDefinition.Default ?? '')
     }
 
     td.appendChild(inputField)
@@ -411,9 +394,13 @@ contextBridge.exposeInMainWorld('htmlElements', {
 
     // Trigger provider's show/hide
     inputField.addEventListener('change', function(this: HTMLInputElement) {
-      window.optionFieldDependencies.select(this.value)
+      const dependencyValue = this.type === 'checkbox' ? String(this.checked) : this.value
+      window.optionFieldDependencies.select(dependencyValue)
     })
-    window.optionFieldDependencies.select(inputField.value)
+    const initialDependencyValue = inputField.type === 'checkbox'
+      ? String((inputField as HTMLInputElement).checked)
+      : inputField.value
+    window.optionFieldDependencies.select(initialDependencyValue)
 
     // Flag that indicate app requires restart when form is saved.
     if (optionFieldDefinition.$RequireRestart) {
@@ -511,15 +498,18 @@ contextBridge.exposeInMainWorld('api', {
         return
       }
 
-      const connectionFields = provider.Options.filter((item) => {
+      window.optionFieldDependencies.registry.length = 0
+      const visibleOptions = provider.Options.filter((item) => item.Hide !== true)
+
+      const connectionFields = visibleOptions.filter((item) => {
         return item.Name !== '_rclonetray_local_path_map' && item.Advanced !== true
       })
 
-      const advancedFields = provider.Options.filter((item) => {
+      const advancedFields = visibleOptions.filter((item) => {
         return item.Name !== '_rclonetray_local_path_map' && item.Advanced === true
       })
 
-      const mappingFields = provider.Options.filter((item) => {
+      const mappingFields = visibleOptions.filter((item) => {
         return item.Name === '_rclonetray_local_path_map'
       })
 
@@ -557,4 +547,3 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.send('get-provider-data', providerName)
   }
 })
-

@@ -218,7 +218,7 @@ function generateBookmarkActionsSubmenu(bookmark: Bookmark): BookmarkMenuResult 
     }
 
     submenu.push({
-      label: 'Show In Finder',
+      label: `Show In ${fileExplorerLabel}`,
       click: () => bookmarkActionRouter.call(bookmark, 'open-local')
     })
   }
@@ -447,4 +447,3 @@ export function init(): void {
 }
 
 export default { refresh, init }
-

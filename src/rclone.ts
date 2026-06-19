@@ -177,10 +177,11 @@ function doCommand(command: string[]): Promise<string> {
     if (isDev) {
       console.info('Rclone[A]', cmd)
     }
-    execFile(cmd[0], cmd.slice(1), { maxBuffer: RcloneExecMaxBuffer }, (err, stdout) => {
+    execFile(cmd[0], cmd.slice(1), { maxBuffer: RcloneExecMaxBuffer }, (err, stdout, stderr) => {
       if (err) {
         console.error('Rclone', err)
-        reject(new Error('Rclone command error.'))
+        const detail = stderr.toString().trim() || err.message
+        reject(new Error(`Rclone command error: ${detail}`))
       } else {
         resolve(stdout)
       }
@@ -274,6 +275,13 @@ class BookmarkProcessManager {
     }
 
     BookmarkProcessRegistry[id].process.stderr?.on('data', this.rcloneProcessWatchdog.bind(this))
+
+    BookmarkProcessRegistry[id].process.on('error', (error) => {
+      console.error('Rclone process failed:', error)
+      dialogs.notification(`Rclone ${this.processName} failed: ${error.message}`)
+      delete BookmarkProcessRegistry[id]
+      fireRcloneUpdateActions()
+    })
 
     BookmarkProcessRegistry[id].process.on('close', () => {
       if (BookmarkProcessRegistry[id]?.data.OK) {
@@ -472,8 +480,8 @@ function updateVersionCache(): void {
 /**
  * Update bookmarks cache
  */
-function updateBookmarksCache(): void {
-  doCommand(['config', 'dump'])
+function updateBookmarksCache(): Promise<void> {
+  return doCommand(['config', 'dump'])
     .then((bookmarksStr) => {
       Cache.bookmarks = {}
       try {
@@ -491,13 +499,17 @@ function updateBookmarksCache(): void {
       }
       fireRcloneUpdateActions()
     })
+    .catch((err) => {
+      console.error('Rclone', 'Cannot update bookmarks cache:', err)
+      throw err
+    })
 }
 
 /**
  * Update providers cache, add $type options objects
  */
-function updateProvidersCache(): void {
-  doCommand(['config', 'providers'])
+function updateProvidersCache(): Promise<void> {
+  return doCommand(['config', 'providers'])
     .then((providersStr) => {
       let providers: Provider[]
       try {
@@ -572,6 +584,10 @@ function updateProvidersCache(): void {
       })
 
       fireRcloneUpdateActions()
+    })
+    .catch((err) => {
+      console.error('Rclone', 'Cannot update providers cache:', err)
+      throw err
     })
 }
 
@@ -648,7 +664,10 @@ export function onUpdate(callback: (eventName?: string) => void): void {
 /**
  * Get available providers
  */
-export function getProviders(): ProvidersCache {
+export async function getProviders(): Promise<ProvidersCache> {
+  if (Object.keys(Cache.providers).length === 0) {
+    await updateProvidersCache()
+  }
   return Cache.providers
 }
 
@@ -722,85 +741,67 @@ function updateBookmarkFields(bookmarkName: string, providerObject: Provider, va
 /**
  * Create new bookmark
  */
-export function addBookmark(type: string, bookmarkName: string, values: Record<string, string>): Promise<void> {
+export async function addBookmark(type: string, bookmarkName: string, values: Record<string, string>): Promise<void> {
   const providerObject = getProvider(type)
   const configFile = getConfigFile()
 
-  return new Promise((resolve, reject) => {
-    if (!/^([a-zA-Z0-9\-_]{1,32})$/.test(bookmarkName)) {
-      reject(new Error('Invalid name.\nName should be 1-32 chars long, and should contain only letters, digits - and _'))
-      return
-    }
+  if (!/^([a-zA-Z0-9\-_]{1,32})$/.test(bookmarkName)) {
+    throw new Error('Invalid name.\nName should be 1-32 chars long, and should contain only letters, digits - and _')
+  }
 
-    validateBookmarkOptions(providerObject, values)
+  validateBookmarkOptions(providerObject, values)
 
-    if (Object.prototype.hasOwnProperty.call(Cache.bookmarks, bookmarkName)) {
-      reject(new Error(`There "${bookmarkName}" bookmark already`))
-      return
-    }
+  if (Object.prototype.hasOwnProperty.call(Cache.bookmarks, bookmarkName)) {
+    throw new Error(`There "${bookmarkName}" bookmark already`)
+  }
 
+  try {
+    const iniBlock = `\n[${bookmarkName}]\nconfig_automatic = no\ntype = ${type}\n`
+    fs.appendFileSync(configFile, iniBlock)
+    console.log('Rclone', 'Creating new bookmark', bookmarkName)
+  } catch (err) {
+    console.error(err)
+    throw new Error('Cannot create new bookmark')
+  }
+
+  try {
+    updateBookmarkFields(bookmarkName, providerObject, values)
+    await updateBookmarksCache()
+    dialogs.notification(`Bookmark ${bookmarkName} is created`)
+  } catch (err) {
+    console.error('Rclone', 'Reverting bookmark because of a problem', bookmarkName, err)
     try {
-      const iniBlock = `\n[${bookmarkName}]\nconfig_automatic = no\ntype = ${type}\n`
-      fs.appendFileSync(configFile, iniBlock)
-      console.log('Rclone', 'Creating new bookmark', bookmarkName)
-      try {
-        updateBookmarkFields(bookmarkName, providerObject, values)
-        // Refresh the in-memory cache + tray immediately instead of waiting for
-        // the (sometimes delayed/missed) config-file watcher, so the new bookmark
-        // actually shows up in the tray right after creation.
-        updateBookmarksCache()
-        dialogs.notification(`Bookmark ${bookmarkName} is created`)
-        resolve()
-      } catch (err) {
-        console.error('Rclone', 'Reverting bookmark because of a problem', bookmarkName, err)
-        doCommand(['config', 'delete', bookmarkName])
-          .then(() => {
-            reject(new Error('Cannot write bookmark options to config.'))
-          })
-          .catch(reject)
-      }
-    } catch (err) {
-      console.error(err)
-      reject(new Error('Cannot create new bookmark'))
+      await doCommand(['config', 'delete', bookmarkName])
+      await updateBookmarksCache()
+    } catch (rollbackError) {
+      console.error('Rclone', 'Cannot rollback failed bookmark creation:', rollbackError)
     }
-  })
+    throw new Error('Cannot write bookmark options to config.')
+  }
 }
 
 /**
  * Update existing bookmark
  */
-export function updateBookmark(bookmark: Bookmark | string, values: Record<string, string>): Promise<void> {
+export async function updateBookmark(bookmark: Bookmark | string, values: Record<string, string>): Promise<void> {
   const bm = getBookmark(bookmark)
   const providerObject = getProvider(bm.type)
-  return new Promise((resolve, reject) => {
-    validateBookmarkOptions(providerObject, values)
+  validateBookmarkOptions(providerObject, values)
 
-    try {
-      updateBookmarkFields(bm.$name, providerObject, values, bm as unknown as Record<string, string>)
-      updateBookmarksCache()
-      dialogs.notification(`Bookmark ${bm.$name} is updated.`)
-      resolve()
-    } catch (err) {
-      reject(err)
-    }
-  })
+  updateBookmarkFields(bm.$name, providerObject, values, bm as unknown as Record<string, string>)
+  await updateBookmarksCache()
+  dialogs.notification(`Bookmark ${bm.$name} is updated.`)
 }
 
 /**
  * Delete existing bookmark
  */
-export function deleteBookmark(bookmark: Bookmark | string): Promise<void> {
+export async function deleteBookmark(bookmark: Bookmark | string): Promise<void> {
   const bm = getBookmark(bookmark)
-  return new Promise((resolve, reject) => {
-    doCommand(['config', 'delete', bm.$name])
-      .then(() => {
-        BookmarkProcessManager.killAll(bm.$name)
-        updateBookmarksCache()
-        dialogs.notification(`Bookmark ${bm.$name} is deleted.`)
-        resolve()
-      })
-      .catch(reject)
-  })
+  await doCommand(['config', 'delete', bm.$name])
+  BookmarkProcessManager.killAll(bm.$name)
+  await updateBookmarksCache()
+  dialogs.notification(`Bookmark ${bm.$name} is deleted.`)
 }
 
 /**
@@ -997,7 +998,11 @@ export function unmount(bookmark: Bookmark | string): void {
 export function openMountPoint(bookmark: Bookmark | string): void {
   const mountpoint = getMountStatus(bookmark)
   if (mountpoint) {
-    shell.openExternal(`file://${mountpoint}`)
+    void shell.openPath(mountpoint).then((error) => {
+      if (error) {
+        console.error('Cannot open mount point:', error)
+      }
+    })
   } else {
     console.error('Trying to open non-mounted drive.')
   }
@@ -1106,7 +1111,12 @@ export function openLocal(bookmark: Bookmark | string): boolean | void {
   const bm = getBookmark(bookmark)
   if (bm._rclonetray_local_path_map) {
     if (fs.existsSync(bm._rclonetray_local_path_map)) {
-      return shell.openExternal(`file://${bm._rclonetray_local_path_map}`) as unknown as boolean
+      void shell.openPath(bm._rclonetray_local_path_map).then((error) => {
+        if (error) {
+          console.error('Cannot open local path:', error)
+        }
+      })
+      return true
     } else {
       console.error('Rclone', 'Local path does not exists.', bm._rclonetray_local_path_map, bm.$name)
       throw new Error(`Local path ${bm._rclonetray_local_path_map} does not exists`)
@@ -1264,10 +1274,12 @@ export function init(): void {
     alwaysStat: true,
     atomic: true
   })
-    .on('change', updateBookmarksCache)
+    .on('change', () => {
+      void updateBookmarksCache().catch(() => undefined)
+    })
 
-  updateProvidersCache()
-  updateBookmarksCache()
+  void updateProvidersCache().catch(() => undefined)
+  void updateBookmarksCache().catch(() => undefined)
 }
 
 /**
@@ -1331,4 +1343,3 @@ export default {
 
   prepareQuit
 }
-

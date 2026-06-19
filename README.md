@@ -188,7 +188,12 @@ npm run publish
 
 ## 📋 Changelog
 
-### v1.4.2 (Latest)
+### v1.5.0 (Latest)
+- **Reliability pass** - clearer rclone error messages, safer bookmark add/update/delete with rollback, and folders open via the native file manager
+- **Consistent UI** - unified `ui.css` design system across all dialogs; fixes checkbox/select/number form fields and restores dialog styling
+- **Platform-aware labels** - "Show in Finder / Explorer / Files" depending on your OS
+
+### v1.4.2
 - **Adding a remote works reliably** - new bookmarks (e.g. S3) now show up in the tray immediately instead of silently doing nothing
 - **Brand icon restored & modernized** - the cloud + "R" on the classic blue→green→yellow gradient, in a clean squircle with real transparency
 - **Bigger, nicer Preferences window** and **working About buttons** (Report an issue / License / version)

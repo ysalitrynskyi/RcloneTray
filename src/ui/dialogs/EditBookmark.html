@@ -3,162 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>Edit Bookmark</title>
-  <style>
-    :root {
-      --bg: oklch(0.985 0.004 285);
-      --surface: oklch(1 0 0);
-      --surface-2: oklch(0.955 0.006 285);
-      --surface-3: oklch(0.93 0.008 285);
-      --text: oklch(0.27 0.02 285);
-      --text-2: oklch(0.52 0.018 285);
-      --text-3: oklch(0.66 0.014 285);
-      --border: oklch(0.9 0.008 285);
-      --border-soft: oklch(0.94 0.006 285);
-      --accent: oklch(0.55 0.17 280);
-      --accent-press: oklch(0.49 0.17 280);
-      --on-accent: oklch(0.99 0 0);
-      --danger: oklch(0.58 0.2 25);
-      --focus: oklch(0.55 0.17 280 / 0.28);
-
-      --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
-      --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
-      --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code', monospace;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: oklch(0.19 0.012 285);
-        --surface: oklch(0.225 0.014 285);
-        --surface-2: oklch(0.27 0.016 285);
-        --surface-3: oklch(0.32 0.018 285);
-        --text: oklch(0.96 0.006 285);
-        --text-2: oklch(0.74 0.012 285);
-        --text-3: oklch(0.58 0.012 285);
-        --border: oklch(0.34 0.014 285);
-        --border-soft: oklch(0.28 0.012 285);
-        --accent: oklch(0.72 0.15 280);
-        --accent-press: oklch(0.78 0.15 280);
-        --on-accent: oklch(0.16 0.02 285);
-        --danger: oklch(0.7 0.18 25);
-        --focus: oklch(0.72 0.15 280 / 0.32);
-      }
-    }
-
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { height: 100%; }
-    body {
-      font-family: var(--font); font-size: 13px; line-height: 1.5;
-      color: var(--text); background: var(--bg);
-      -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
-      user-select: none; display: flex; flex-direction: column; overflow: hidden;
-    }
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-
-    input:not([type="checkbox"]):not([type="radio"]), textarea, select {
-      width: 100%; font: inherit; padding: 8px 11px; color: var(--text);
-      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-      transition: border-color .12s ease, box-shadow .12s ease;
-    }
-    input:focus, textarea:focus, select:focus {
-      outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus);
-    }
-    textarea { resize: vertical; min-height: 72px; }
-    input[type="checkbox"], input[type="radio"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
-    select {
-      cursor: pointer; appearance: none; padding-right: 30px;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'%3E%3Cpath fill='%238b8b94' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
-      background-repeat: no-repeat; background-position: right 11px center;
-    }
-
-    button {
-      font: inherit; font-weight: 600; cursor: pointer;
-      padding: 8px 16px; border-radius: 8px; border: 1px solid transparent;
-      background: var(--accent); color: var(--on-accent);
-      transition: background .12s ease, transform .06s ease, color .12s ease;
-    }
-    button:hover { background: var(--accent-press); }
-    button:active { transform: translateY(0.5px); }
-
-    .form { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-
-    .header {
-      flex: none; display: flex; align-items: center; gap: var(--s3);
-      padding: var(--s4); border-bottom: 1px solid var(--border-soft); background: var(--bg);
-    }
-    .avatar {
-      flex: none; width: 38px; height: 38px; border-radius: 10px;
-      display: flex; align-items: center; justify-content: center;
-      font-weight: 700; font-size: 16px; color: #fff; text-transform: uppercase;
-      box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.12);
-    }
-    .header-text { min-width: 0; }
-    .header-text h1 {
-      font-size: 15px; font-weight: 650; color: var(--text);
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .header-text .type { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-top: 1px; }
-
-    .body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s4) var(--s4) var(--s5); }
-
-    #bookmark-settings .tabs { display: flex; flex-direction: column; }
-    #bookmark-settings .tab-buttons {
-      display: flex; gap: var(--s1); padding-bottom: var(--s3); margin-bottom: var(--s2);
-      border-bottom: 1px solid var(--border-soft);
-    }
-    #bookmark-settings .tab-button {
-      padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
-      color: var(--text-2); cursor: pointer; transition: background .1s ease, color .1s ease;
-    }
-    #bookmark-settings .tab-button:hover { background: var(--surface-2); color: var(--text); }
-    #bookmark-settings .tab-button.active { background: var(--accent); color: var(--on-accent); }
-    #bookmark-settings .tab-content { padding: var(--s2) 0; }
-    #bookmark-settings .row { display: flex; gap: var(--s3); padding: 10px 0; align-items: flex-start; }
-    #bookmark-settings .row + .row { border-top: 1px solid var(--border-soft); }
-    #bookmark-settings .cell-left {
-      width: 36%; padding-top: 8px; text-align: right; font-size: 12px; font-weight: 600;
-      color: var(--text); word-break: break-word;
-    }
-    #bookmark-settings .cell-right { width: 64%; min-width: 0; }
-    #bookmark-settings .label-help { margin-top: 6px; font-size: 11px; line-height: 1.45; color: var(--text-2); }
-    #bookmark-settings .label-help-inline { display: inline; margin-left: 8px; font-size: 12px; color: var(--text-2); }
-    #bookmark-settings .label-required {
-      margin-top: 4px; font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-3);
-    }
-    #bookmark-settings var {
-      font-family: var(--mono); font-style: normal; font-size: 12px;
-      padding: 2px 6px; border-radius: 5px; background: var(--surface-2);
-    }
-    #bookmark-settings button {
-      background: var(--surface-2); color: var(--text); border-color: var(--border); padding: 7px 12px;
-    }
-    #bookmark-settings button:hover { background: var(--surface-3); }
-
-    .tip {
-      display: flex; gap: var(--s2); align-items: flex-start;
-      margin: var(--s4) var(--s4) 0; padding: 11px 13px; border-radius: 10px;
-      background: var(--surface-2); border: 1px solid var(--border-soft);
-      font-size: 11.5px; line-height: 1.5; color: var(--text-2);
-    }
-    .tip svg { flex: none; width: 15px; height: 15px; margin-top: 1px; color: var(--accent); }
-
-    .footer {
-      flex: none; display: flex; align-items: center; justify-content: space-between;
-      padding: var(--s3) var(--s4); border-top: 1px solid var(--border-soft); background: var(--bg);
-    }
-    .btn-danger { background: transparent; color: var(--danger); border-color: var(--border); }
-    .btn-danger:hover { background: var(--danger); color: var(--on-accent); border-color: transparent; }
-
-    .state { padding: var(--s6); text-align: center; color: var(--text-3); font-size: 12.5px; }
-    .state.error { color: var(--danger); }
-    .spinner {
-      display: inline-block; width: 15px; height: 15px; margin-left: 8px; vertical-align: -2px;
-      border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%;
-      animation: spin .8s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
-  </style>
+  <link rel="stylesheet" href="../styles/ui.css">
 </head>
 <body>
   <form id="the-form" class="form">
@@ -174,11 +19,11 @@
       <div id="bookmark-settings">
         <div class="state">Loading settings <span class="spinner"></span></div>
       </div>
-    </div>
 
-    <div class="tip">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-      <span>Use the <strong>Advanced</strong> tab for provider-specific options. Mount read/write behaviour is set in <strong>Preferences → Rclone → VFS cache mode</strong>.</span>
+      <div class="tip">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <span>Use the <strong>Advanced</strong> tab for provider-specific options. Mount read/write behaviour is set in <strong>Preferences → Rclone → VFS cache mode</strong>.</span>
+      </div>
     </div>
 
     <div class="footer">

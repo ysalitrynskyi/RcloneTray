@@ -2,360 +2,80 @@
 <html>
 <head>
   <title>Preferences</title>
+  <link rel="stylesheet" href="../styles/ui.css">
   <style>
-    :root {
-      --bg-primary: #fafafa;
-      --bg-secondary: #ffffff;
-      --bg-sidebar: #f0f0f0;
-      --bg-hover: #e8e8e8;
-      --bg-active: #007AFF;
-      --text-primary: #1a1a1a;
-      --text-secondary: #666666;
-      --text-active: #ffffff;
-      --border-color: #e0e0e0;
-      --accent: #007AFF;
-      --accent-hover: #0056b3;
-      --input-bg: #ffffff;
-      --input-border: #d1d1d1;
-      --shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg-primary: #1c1c1e;
-        --bg-secondary: #2c2c2e;
-        --bg-sidebar: #252527;
-        --bg-hover: #3a3a3c;
-        --bg-active: #0a84ff;
-        --text-primary: #f5f5f7;
-        --text-secondary: #98989d;
-        --text-active: #ffffff;
-        --border-color: #3a3a3c;
-        --accent: #0a84ff;
-        --accent-hover: #409cff;
-        --input-bg: #1c1c1e;
-        --input-border: #48484a;
-        --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-      }
-    }
-
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    html, body {
-      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
-      font-size: 13px;
-      background: var(--bg-primary);
-      color: var(--text-primary);
-      height: 100%;
-      -webkit-user-select: none;
-      user-select: none;
-    }
-
-    .container {
-      display: flex;
-      height: 100%;
-    }
+    .container { display: flex; height: 100%; }
 
     /* Sidebar */
     .sidebar {
-      width: 196px;
-      background: var(--bg-sidebar);
-      border-right: 1px solid var(--border-color);
-      padding: 18px 12px;
-      flex-shrink: 0;
+      width: 196px; background: var(--surface-2); border-right: 1px solid var(--border-soft);
+      padding: 18px 12px; flex-shrink: 0;
     }
-
     .sidebar-title {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.6px;
-      color: var(--text-secondary);
-      padding: 0 12px 10px;
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
+      color: var(--text-2); padding: 0 12px 10px;
     }
-
     .sidebar-item {
-      display: flex;
-      align-items: center;
-      padding: 10px 12px;
-      margin-bottom: 3px;
-      border-radius: 8px;
-      cursor: pointer;
-      color: var(--text-primary);
-      font-weight: 500;
-      font-size: 13.5px;
-      transition: all 0.15s ease;
+      display: flex; align-items: center; padding: 10px 12px; margin-bottom: 3px;
+      border-radius: 8px; cursor: pointer; color: var(--text); font-weight: 500;
+      font-size: 13.5px; transition: all 0.15s ease;
     }
-
-    .sidebar-item:hover {
-      background: var(--bg-hover);
-    }
-
-    .sidebar-item.active {
-      background: var(--bg-active);
-      color: var(--text-active);
-    }
-
-    .sidebar-item svg {
-      width: 17px;
-      height: 17px;
-      margin-right: 10px;
-      opacity: 0.7;
-    }
-
-    .sidebar-item.active svg {
-      opacity: 1;
-    }
+    .sidebar-item:hover { background: var(--surface-3); }
+    .sidebar-item.active { background: var(--accent); color: var(--on-accent); }
+    .sidebar-item svg { width: 17px; height: 17px; margin-right: 10px; opacity: 0.7; }
+    .sidebar-item.active svg { opacity: 1; }
 
     /* Content */
-    .content {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      background: var(--bg-secondary);
-    }
-
-    .content-body {
-      flex: 1;
-      padding: 28px 32px;
-      overflow-y: auto;
-    }
-
+    .content { flex: 1; display: flex; flex-direction: column; background: var(--bg); }
+    .content-body { flex: 1; padding: 28px 32px; overflow-y: auto; }
     .content-footer {
-      padding: 14px 32px;
-      border-top: 1px solid var(--border-color);
-      display: flex;
-      justify-content: flex-end;
-      align-items: center;
-      gap: 12px;
-      background: var(--bg-secondary);
+      padding: 14px 32px; border-top: 1px solid var(--border-soft);
+      display: flex; justify-content: flex-end; align-items: center; gap: 12px;
+      background: var(--bg);
     }
-
-    .footer-hint {
-      margin-right: auto;
-      font-size: 11.5px;
-      color: var(--text-secondary);
-    }
+    .footer-hint { margin-right: auto; font-size: 11.5px; color: var(--text-2); }
 
     /* Panels */
-    .panel {
-      display: none;
-    }
-
-    .panel.active {
-      display: block;
-    }
-
+    .panel { display: none; }
+    .panel.active { display: block; }
     .panel-title {
-      font-size: 22px;
-      font-weight: 700;
-      letter-spacing: -0.3px;
-      margin-bottom: 4px;
-      color: var(--text-primary);
+      font-size: 22px; font-weight: 700; letter-spacing: -0.3px;
+      margin-bottom: 4px; color: var(--text);
     }
-
-    .panel-subtitle {
-      font-size: 12.5px;
-      color: var(--text-secondary);
-      margin-bottom: 22px;
-    }
+    .panel-subtitle { font-size: 12.5px; color: var(--text-2); margin-bottom: 22px; }
 
     /* Form groups */
-    .form-group {
-      margin-bottom: 20px;
-    }
-
-    .form-row {
-      display: flex;
-      align-items: flex-start;
-      margin-bottom: 16px;
-    }
-
-    .form-row:last-child {
-      margin-bottom: 0;
-    }
-
+    .form-group { margin-bottom: 20px; }
+    .form-row { display: flex; align-items: flex-start; margin-bottom: 16px; }
+    .form-row:last-child { margin-bottom: 0; }
     .form-label {
-      width: 150px;
-      padding-top: 7px;
-      font-weight: 500;
-      color: var(--text-primary);
-      flex-shrink: 0;
+      width: 150px; padding-top: 7px; font-weight: 500; color: var(--text); flex-shrink: 0;
     }
-
-    .form-control {
-      flex: 1;
-    }
-
-    .form-help {
-      font-size: 11px;
-      color: var(--text-secondary);
-      margin-top: 4px;
-      line-height: 1.4;
-    }
-
-    /* Inputs */
-    input[type="text"],
-    input[type="number"],
-    input[type="password"],
-    textarea,
-    select {
-      width: 100%;
-      padding: 8px 10px;
-      border: 1px solid var(--input-border);
-      border-radius: 6px;
-      background: var(--input-bg);
-      color: var(--text-primary);
-      font-size: 13px;
-      font-family: inherit;
-      transition: border-color 0.15s ease, box-shadow 0.15s ease;
-    }
-
-    input[type="text"]:focus,
-    input[type="number"]:focus,
-    input[type="password"]:focus,
-    textarea:focus,
-    select:focus {
-      outline: none;
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
-    }
-
-    textarea {
-      resize: vertical;
-      min-height: 80px;
-    }
-
-    select {
-      cursor: pointer;
-    }
+    .form-control { flex: 1; }
+    .form-help { font-size: 11px; color: var(--text-2); margin-top: 4px; line-height: 1.4; }
 
     /* Checkbox */
-    .checkbox-wrapper {
-      display: flex;
-      align-items: center;
-    }
-
-    .checkbox-wrapper input[type="checkbox"] {
-      width: 16px;
-      height: 16px;
-      margin: 0;
-      cursor: pointer;
-      accent-color: var(--accent);
-    }
-
-    .checkbox-label {
-      margin-left: 8px;
-      color: var(--text-secondary);
-      font-size: 12px;
-    }
+    .checkbox-wrapper { display: flex; align-items: center; }
+    .checkbox-label { margin-left: 8px; color: var(--text-2); font-size: 12px; }
 
     /* Section */
     .section {
-      background: var(--bg-primary);
-      border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 16px;
-      border: 1px solid var(--border-color);
+      background: var(--surface); border-radius: 8px; padding: 16px;
+      margin-bottom: 16px; border: 1px solid var(--border-soft);
     }
-
-    .section:last-child {
-      margin-bottom: 0;
-    }
-
+    .section:last-child { margin-bottom: 0; }
     .section-title {
-      font-size: 12px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: var(--text-secondary);
-      margin-bottom: 12px;
-    }
-
-    /* Button */
-    .btn {
-      padding: 8px 16px;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      border: none;
-      font-family: inherit;
-    }
-
-    .btn-primary {
-      background: var(--accent);
-      color: white;
-    }
-
-    .btn-primary:hover {
-      background: var(--accent-hover);
-    }
-
-    .btn-secondary {
-      background: var(--bg-hover);
-      color: var(--text-primary);
-      border: 1px solid var(--border-color);
-    }
-
-    .btn-secondary:hover {
-      background: var(--border-color);
+      font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+      color: var(--text-2); margin-bottom: 12px;
     }
 
     /* File input wrapper */
-    .file-input-wrapper {
-      display: flex;
-      gap: 8px;
-    }
-
-    .file-input-wrapper input {
-      flex: 1;
-    }
-
-    .file-input-wrapper .btn {
-      padding: 8px 12px;
-      white-space: nowrap;
-    }
-
-    /* Loading state */
-    .loading {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      color: var(--text-secondary);
-    }
-
-    .loading::after {
-      content: '';
-      width: 20px;
-      height: 20px;
-      border: 2px solid var(--border-color);
-      border-top-color: var(--accent);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      margin-left: 8px;
-    }
-
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-
-    /* Error state */
-    .error {
-      color: #ff3b30;
-      padding: 20px;
-      text-align: center;
-    }
+    .file-input-wrapper { display: flex; gap: 8px; }
+    .file-input-wrapper input { flex: 1; }
   </style>
 </head>
 <body>
-  <div id="loading" class="loading">Loading preferences...</div>
+  <div id="loading" class="state" style="margin-top: 40px;">Loading preferences... <span class="spinner"></span></div>
   
   <form id="preferences-form" class="container" style="display: none;">
     <nav class="sidebar">
@@ -716,7 +436,7 @@
 
         // Track fields that require restart
         let requiresRestart = false;
-        ['rclone_config', 'rclone_use_bundled', 'rclone_sync_autoupload_delay'].forEach(id => {
+        ['rclone_config', 'rclone_use_bundled'].forEach(id => {
           document.getElementById(id)?.addEventListener('change', () => { requiresRestart = true; });
         });
 
@@ -735,26 +455,24 @@
             if (input.name) data[input.name] = input.value;
           });
 
-          // Handle autostart separately
-          const oldAutoStart = await $main.isAutostart();
-          if (oldAutoStart !== data.auto_start) {
-            $main.setAutostart(data.auto_start);
-          }
-          delete data.auto_start;
-
-          // Save settings
-          await $main.settingsMerge(data);
-          $main.refreshTray();
-
-          if (requiresRestart) {
-            const shouldRestart = await window.electronAPI.confirm('Some changes require a restart. Restart now?');
-            if (shouldRestart) {
-              window.htmlElements.checkForRequiredRestart();
-            } else {
-              window.close();
+          try {
+            // Handle autostart separately
+            const oldAutoStart = await $main.isAutostart();
+            if (oldAutoStart !== data.auto_start) {
+              $main.setAutostart(data.auto_start);
             }
-          } else {
+            delete data.auto_start;
+
+            // Save settings
+            await $main.settingsMerge(data);
+            $main.refreshTray();
+
+            if (requiresRestart) {
+              window.htmlElements.checkForRequiredRestart();
+            }
             window.close();
+          } catch (error) {
+            window.electronAPI.errorBox(error.message || String(error));
           }
         });
 

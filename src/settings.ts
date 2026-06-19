@@ -102,7 +102,7 @@ export function remove(item: SettingKey): boolean {
 /**
  * Merge current settings
  */
-export function merge(newSettings: Partial<Settings>): void {
+export function merge(newSettings: Partial<Settings>): Promise<void> {
   Object.keys(newSettings).forEach(function (key) {
     const k = key as SettingKey
     if (has(k)) {
@@ -110,7 +110,7 @@ export function merge(newSettings: Partial<Settings>): void {
       (cache as any)[k] = coerceSettingValue(k, newSettings[k])
     }
   })
-  updateFile()
+  return updateFile()
 }
 
 /**
@@ -126,6 +126,7 @@ export function getAll(): Settings {
 async function updateFile(): Promise<void> {
   try {
     const jsonContent = JSON.stringify(cache)
+    await fs.mkdir(settingsDir, { recursive: true })
     await fs.writeFile(settingsFile, jsonContent)
   } catch (err) {
     console.error('Error updating settings file:', err)
@@ -165,4 +166,3 @@ function readFileSyncInit(): void {
 readFileSyncInit()
 
 export default { set, get, has, getAll, remove, merge }
-
