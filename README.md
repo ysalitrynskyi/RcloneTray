@@ -180,7 +180,10 @@ npm run publish
 
 ## 📋 Changelog
 
-### v1.3.0 (Latest)
+### v1.3.1 (Latest)
+- **Security** - dialog error messages now render via `textContent` (no HTML injection)
+
+### v1.3.0
 - **Reliability** - rclone commands now run via `execFile` (no shell) to avoid quoting/escaping bugs
 - **Bug fix** - bundled rclone binary is now found on x64/ia32 (architecture name mapping)
 - **Windows** - replaced deprecated `wmic` with PowerShell for free-drive-letter detection

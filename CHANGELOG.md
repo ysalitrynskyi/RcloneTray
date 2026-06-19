@@ -5,6 +5,13 @@ All notable changes to RcloneTray will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-06-19
+
+### Security
+- Dialog error messages are now rendered with `textContent` instead of `innerHTML`
+  in the Preferences and Edit Bookmark dialogs, removing any chance of HTML
+  injection through an error string.
+
 ## [1.3.0] - 2026-06-19
 
 ### Fixed
