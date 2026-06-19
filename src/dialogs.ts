@@ -1,7 +1,7 @@
 'use strict'
 
 import * as path from 'path'
-import { shell, app, BrowserWindow, Menu, Notification, dialog, MenuItemConstructorOptions } from 'electron'
+import { shell, app, BrowserWindow, Menu, Notification, dialog, nativeTheme, MenuItemConstructorOptions } from 'electron'
 import electronContextMenu from 'electron-context-menu'
 import isDev from 'electron-is-dev'
 import * as settings from './settings'
@@ -122,17 +122,16 @@ function createNewDialog(dialogName: string, options?: DialogOptions, props?: Di
 export function about(): void {
   const aboutDialog = createNewDialog('About', {
     $singleId: 1,
-    title: 'About',
-    width: 400,
-    height: 440,
+    title: 'About RcloneTray',
+    width: 380,
+    height: 468,
+    resizable: false,
     minimizable: false,
     alwaysOnTop: true,
     acceptFirstMouse: true,
-
-    // Make the window sexy.
-    vibrancy: 'appearance-based',
-    titleBarStyle: 'hidden',
-    backgroundColor: undefined
+    // Solid window (no vibrancy/transparency) so nothing shows through behind it.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1c1c1e' : '#f4f4f6',
+    titleBarStyle: process.platform === 'darwin' ? 'hidden' : 'default'
   })
 
   // Close when loose focus, but only when non-dev because even the dev tool trigger the close.

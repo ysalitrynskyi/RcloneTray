@@ -1,241 +1,258 @@
 <!doctype html>
 <html>
 <head>
+  <meta charset="utf-8">
   <title>Add Remote</title>
-  <script defer>
-    $main.loadStyles()
-  </script>
   <style>
+    :root {
+      --bg: oklch(0.985 0.004 285);
+      --surface: oklch(1 0 0);
+      --surface-2: oklch(0.955 0.006 285);
+      --surface-3: oklch(0.93 0.008 285);
+      --text: oklch(0.27 0.02 285);
+      --text-2: oklch(0.52 0.018 285);
+      --text-3: oklch(0.66 0.014 285);
+      --border: oklch(0.9 0.008 285);
+      --border-soft: oklch(0.94 0.006 285);
+      --accent: oklch(0.55 0.17 280);
+      --accent-press: oklch(0.49 0.17 280);
+      --on-accent: oklch(0.99 0 0);
+      --focus: oklch(0.55 0.17 280 / 0.28);
+      --shadow: 0 1px 2px oklch(0.3 0.03 285 / 0.08), 0 8px 24px oklch(0.3 0.03 285 / 0.06);
+
+      --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
+      --radius: 9px;
+      --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+      --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code', monospace;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: oklch(0.19 0.012 285);
+        --surface: oklch(0.225 0.014 285);
+        --surface-2: oklch(0.27 0.016 285);
+        --surface-3: oklch(0.32 0.018 285);
+        --text: oklch(0.96 0.006 285);
+        --text-2: oklch(0.74 0.012 285);
+        --text-3: oklch(0.58 0.012 285);
+        --border: oklch(0.34 0.014 285);
+        --border-soft: oklch(0.28 0.012 285);
+        --accent: oklch(0.72 0.15 280);
+        --accent-press: oklch(0.78 0.15 280);
+        --on-accent: oklch(0.16 0.02 285);
+        --focus: oklch(0.72 0.15 280 / 0.32);
+        --shadow: 0 1px 2px oklch(0 0 0 / 0.4), 0 10px 28px oklch(0 0 0 / 0.35);
+      }
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body { height: 100%; }
+
     body {
-      padding: 0;
-      -webkit-app-region: no-drag;
+      font-family: var(--font);
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      user-select: none;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
     }
 
-    /* ---- Step 1: provider picker ---- */
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ---------- Form controls (also styles injected provider fields) ---------- */
+    input:not([type="checkbox"]):not([type="radio"]),
+    textarea, select {
+      width: 100%;
+      font: inherit;
+      padding: 8px 11px;
+      color: var(--text);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      transition: border-color .12s ease, box-shadow .12s ease;
+    }
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--focus);
+    }
+    textarea { resize: vertical; min-height: 72px; }
+    input[type="checkbox"], input[type="radio"] {
+      width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer;
+    }
+    select {
+      cursor: pointer; appearance: none; padding-right: 30px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'%3E%3Cpath fill='%238b8b94' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 11px center;
+    }
+
+    button {
+      font: inherit; font-weight: 600; cursor: pointer;
+      padding: 8px 16px; border-radius: 8px; border: 1px solid transparent;
+      background: var(--accent); color: var(--on-accent);
+      transition: background .12s ease, transform .06s ease;
+    }
+    button:hover { background: var(--accent-press); }
+    button:active { transform: translateY(0.5px); }
+
+    /* ---------- Step 1: provider picker ---------- */
+    .picker { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+
     .picker-header {
-      padding: 18px 20px 12px;
-      border-bottom: 1px solid var(--border-color, #e0e0e0);
-      background: var(--bg-primary, #fafafa);
+      flex: none;
+      padding: var(--s5) var(--s5) var(--s3);
+      background: var(--bg);
     }
-
     .picker-header h1 {
-      font-size: 15px;
-      font-weight: 600;
-      margin: 0;
-      color: var(--text-primary, #1a1a1a);
+      font-size: 19px; font-weight: 700; letter-spacing: -0.01em;
+      color: var(--text);
     }
-
     .picker-header p {
-      margin: 4px 0 12px;
-      font-size: 12px;
-      line-height: 1.45;
-      color: var(--text-secondary, #666);
+      margin: var(--s2) 0 var(--s4);
+      max-width: 52ch;
+      font-size: 12.5px; line-height: 1.5; color: var(--text-2);
     }
 
-    .search-wrap {
-      position: relative;
-    }
-
+    .search-wrap { position: relative; }
     .search-wrap svg {
-      position: absolute;
-      left: 10px;
-      top: 50%;
-      transform: translateY(-50%);
-      width: 15px;
-      height: 15px;
-      opacity: 0.45;
-      pointer-events: none;
+      position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+      width: 15px; height: 15px; color: var(--text-3); pointer-events: none;
     }
-
-    #provider-search {
-      padding-left: 32px;
-    }
+    #provider-search { padding-left: 36px; height: 38px; background: var(--surface); }
 
     .provider-list {
-      list-style: none;
-      margin: 0;
-      padding: 6px;
-      overflow-y: auto;
-      max-height: 360px;
+      list-style: none; flex: 1; min-height: 0; overflow-y: auto;
+      padding: var(--s2) var(--s3) var(--s5);
     }
 
     .provider-item {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 10px 12px;
-      border-radius: 8px;
-      cursor: pointer;
-      -webkit-app-region: no-drag;
+      display: flex; align-items: center; gap: var(--s3);
+      padding: 9px 10px; border-radius: 10px; cursor: pointer;
+      transition: background .1s ease;
     }
+    .provider-item:hover, .provider-item.active { background: var(--surface-2); }
 
-    .provider-item:hover,
-    .provider-item.active {
-      background: var(--bg-tertiary, #f0f0f0);
+    .avatar {
+      flex: none; width: 34px; height: 34px; border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 15px; color: #fff; text-transform: uppercase;
+      box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.12);
     }
-
-    .provider-avatar {
-      width: 32px;
-      height: 32px;
-      flex-shrink: 0;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 700;
-      font-size: 14px;
-      color: #fff;
-      text-transform: uppercase;
-    }
-
-    .provider-meta {
-      min-width: 0;
-    }
-
+    .provider-meta { min-width: 0; }
     .provider-name {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--text-primary, #1a1a1a);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      font-size: 13.5px; font-weight: 600; color: var(--text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-
     .provider-type {
-      font-size: 11px;
-      color: var(--text-secondary, #888);
-      margin-top: 1px;
+      font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-top: 1px;
     }
 
-    .empty-state {
-      padding: 28px 20px;
-      text-align: center;
-      color: var(--text-secondary, #888);
-      font-size: 12px;
-    }
+    .state { padding: var(--s6) var(--s5); text-align: center; color: var(--text-3); font-size: 12.5px; }
+    .state.error { color: oklch(0.6 0.2 25); }
 
-    /* ---- Step 2: configure ---- */
-    #configure { display: none; }
+    /* ---------- Step 2: configure ---------- */
+    #the-form { display: none; flex-direction: column; flex: 1; min-height: 0; }
+    #configure { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 
     .config-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 14px 16px;
-      border-bottom: 1px solid var(--border-color, #e0e0e0);
-      background: var(--bg-primary, #fafafa);
+      flex: none; display: flex; align-items: center; gap: var(--s3);
+      padding: var(--s3) var(--s4);
+      border-bottom: 1px solid var(--border-soft); background: var(--bg);
     }
-
     .back-btn {
-      -webkit-app-region: no-drag;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      padding: 6px 10px;
-      border-radius: 6px;
-      border: 1px solid var(--border-color, #e0e0e0);
-      background: var(--bg-secondary, #fff);
-      color: var(--text-primary, #1a1a1a);
-      font-size: 12px;
-      font-weight: 500;
-      cursor: pointer;
+      flex: none; display: inline-flex; align-items: center; gap: 4px;
+      padding: 6px 11px 6px 8px; font-size: 12px; font-weight: 600;
+      color: var(--text); background: var(--surface);
+      border: 1px solid var(--border); border-radius: 8px;
     }
-
-    .back-btn:hover { background: var(--bg-tertiary, #f0f0f0); }
+    .back-btn:hover { background: var(--surface-2); }
     .back-btn svg { width: 14px; height: 14px; }
-
-    .config-title {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      min-width: 0;
+    .config-id { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
+    .config-id .avatar { width: 28px; height: 28px; font-size: 13px; border-radius: 8px; }
+    .config-id h1 {
+      font-size: 14px; font-weight: 650; color: var(--text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
 
-    .config-title .provider-avatar { width: 28px; height: 28px; font-size: 13px; }
+    .config-body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s4) var(--s4) var(--s5); }
 
-    .config-title h1 {
-      font-size: 14px;
-      font-weight: 600;
-      margin: 0;
-      color: var(--text-primary, #1a1a1a);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+    .field { margin-bottom: var(--s4); }
+    .field > label {
+      display: block; font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 6px;
     }
+    .field > label small { font-weight: 400; color: var(--text-3); margin-left: 5px; }
 
-    .config-body { padding: 16px 18px; }
-
-    .form-group { margin-bottom: 4px; }
-
-    .form-label {
-      display: block;
-      font-weight: 600;
-      font-size: 12px;
-      margin-bottom: 6px;
-      color: var(--text-primary, #1a1a1a);
+    /* injected provider fields */
+    #bookmark-settings .tabs { display: flex; flex-direction: column; }
+    #bookmark-settings .tab-buttons {
+      display: flex; gap: var(--s1); padding-bottom: var(--s3); margin-bottom: var(--s2);
+      border-bottom: 1px solid var(--border-soft);
     }
-
-    .form-label small {
-      font-weight: 400;
-      color: var(--text-secondary, #888);
-      margin-left: 4px;
+    #bookmark-settings .tab-button {
+      padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
+      color: var(--text-2); cursor: pointer; transition: background .1s ease, color .1s ease;
     }
+    #bookmark-settings .tab-button:hover { background: var(--surface-2); color: var(--text); }
+    #bookmark-settings .tab-button.active { background: var(--accent); color: var(--on-accent); }
+    #bookmark-settings .tab-content { padding: var(--s2) 0; }
+    #bookmark-settings .row { display: flex; gap: var(--s3); padding: 10px 0; align-items: flex-start; }
+    #bookmark-settings .row + .row { border-top: 1px solid var(--border-soft); }
+    #bookmark-settings .cell-left {
+      width: 36%; padding-top: 8px; text-align: right; font-size: 12px; font-weight: 600;
+      color: var(--text); word-break: break-word;
+    }
+    #bookmark-settings .cell-right { width: 64%; min-width: 0; }
+    #bookmark-settings .label-help { margin-top: 6px; font-size: 11px; line-height: 1.45; color: var(--text-2); }
+    #bookmark-settings .label-help-inline { display: inline; margin-left: 8px; font-size: 12px; color: var(--text-2); }
+    #bookmark-settings .label-required {
+      margin-top: 4px; font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-3);
+    }
+    #bookmark-settings var {
+      font-family: var(--mono); font-style: normal; font-size: 12px;
+      padding: 2px 6px; border-radius: 5px; background: var(--surface-2);
+    }
+    #bookmark-settings button {
+      background: var(--surface-2); color: var(--text); border-color: var(--border);
+      font-weight: 600; padding: 7px 12px;
+    }
+    #bookmark-settings button:hover { background: var(--surface-3); }
 
     .tip {
-      display: flex;
-      gap: 8px;
-      align-items: flex-start;
-      margin: 14px 0 4px;
-      padding: 10px 12px;
-      border-radius: 8px;
-      background: rgba(0, 122, 255, 0.08);
-      border: 1px solid rgba(0, 122, 255, 0.18);
-      font-size: 11.5px;
-      line-height: 1.45;
-      color: var(--text-secondary, #555);
+      display: flex; gap: var(--s2); align-items: flex-start;
+      margin-top: var(--s4); padding: 11px 13px; border-radius: 10px;
+      background: var(--surface-2); border: 1px solid var(--border-soft);
+      font-size: 11.5px; line-height: 1.5; color: var(--text-2);
+    }
+    .tip svg { flex: none; width: 15px; height: 15px; margin-top: 1px; color: var(--accent); }
+
+    .config-footer {
+      flex: none; display: flex; justify-content: flex-end; gap: var(--s2);
+      padding: var(--s3) var(--s4); border-top: 1px solid var(--border-soft); background: var(--bg);
     }
 
-    .tip svg { width: 15px; height: 15px; flex-shrink: 0; margin-top: 1px; color: var(--accent, #007AFF); }
-    .tip a { color: var(--accent, #007AFF); }
-
-    .form-footer {
-      padding: 12px 18px;
-      border-top: 1px solid var(--border-color, #e0e0e0);
-      display: flex;
-      justify-content: flex-end;
-      background: var(--bg-primary, #fafafa);
-    }
-
-    .loading, .error { padding: 28px; text-align: center; color: var(--text-secondary, #888); font-size: 12px; }
-    .error { color: #ff3b30; }
-
-    @media (prefers-color-scheme: dark) {
-      .picker-header, .config-header, .form-footer {
-        background: var(--bg-primary, #1c1c1e);
-        border-color: var(--border-color, #3a3a3c);
-      }
-      .provider-item:hover, .provider-item.active { background: var(--bg-tertiary, #3a3a3c); }
-      .back-btn { background: var(--bg-secondary, #2c2c2e); border-color: var(--border-color, #3a3a3c); }
-      .tip {
-        background: rgba(10, 132, 255, 0.12);
-        border-color: rgba(10, 132, 255, 0.28);
-      }
-    }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
   </style>
 </head>
 <body>
   <!-- Step 1: choose a provider -->
-  <section id="picker">
+  <section class="picker" id="picker">
     <div class="picker-header">
       <h1>Add a remote</h1>
-      <p>Pick the cloud or storage service you want to connect. After this you'll fill in your credentials, then you can mount, sync or serve it from the tray.</p>
+      <p>Choose a cloud or storage service to connect. Next you'll enter your credentials — then you can mount, sync, or serve it from the tray.</p>
       <div class="search-wrap">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" id="provider-search" placeholder="Search providers (e.g. Drive, S3, SFTP)…" autocomplete="off" spellcheck="false">
+        <input type="text" id="provider-search" placeholder="Search — Drive, S3, SFTP, WebDAV…" autocomplete="off" spellcheck="false">
       </div>
     </div>
     <ul class="provider-list" id="provider-list">
-      <li class="loading">Loading providers…</li>
+      <li class="state">Loading providers…</li>
     </ul>
   </section>
 
@@ -247,16 +264,16 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"/></svg>
           Back
         </button>
-        <div class="config-title">
-          <div class="provider-avatar" id="config-avatar"></div>
+        <div class="config-id">
+          <div class="avatar" id="config-avatar"></div>
           <h1 id="config-name">Provider</h1>
         </div>
       </div>
 
       <div class="config-body">
-        <input type="hidden" name="type" id="bookmark-type-field">
-        <div class="form-group">
-          <label class="form-label">Name <small>(required)</small></label>
+        <input type="hidden" name="type" id="type-field">
+        <div class="field">
+          <label for="bookmark-name">Name <small>required</small></label>
           <input type="text" name="name" id="bookmark-name" maxlength="40" placeholder="My Cloud Storage" required>
         </div>
 
@@ -264,66 +281,62 @@
 
         <div class="tip">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-          <span>Need extra control? Open the <strong>Advanced</strong> tab above for provider-specific options, or set global flags in <strong>Preferences → Rclone → Custom args</strong>. Full reference at <a href="https://rclone.org/docs/" target="_blank">rclone.org/docs</a>.</span>
+          <span>Power user? The <strong>Advanced</strong> tab exposes provider-specific options, and global flags live in <strong>Preferences → Rclone → Custom args</strong>. Reference: <a href="https://rclone.org/docs/" target="_blank" rel="noopener">rclone.org/docs</a>.</span>
         </div>
       </div>
 
-      <div class="form-footer">
-        <button type="submit">Create Bookmark</button>
+      <div class="config-footer">
+        <button type="submit">Create bookmark</button>
       </div>
     </div>
   </form>
 
   <script>
     (function () {
-      const PALETTE = ['#007AFF', '#34C759', '#FF9500', '#AF52DE', '#FF2D55', '#5856D6', '#00C7BE', '#FF3B30', '#A2845E', '#30B0C7'];
-      function colorFor(text) {
+      const PALETTE = [
+        'oklch(0.6 0.17 265)', 'oklch(0.62 0.16 150)', 'oklch(0.68 0.16 60)',
+        'oklch(0.6 0.18 320)', 'oklch(0.6 0.2 20)', 'oklch(0.58 0.15 240)',
+        'oklch(0.64 0.13 195)', 'oklch(0.55 0.12 30)', 'oklch(0.6 0.17 295)'
+      ];
+      function colorFor(t) {
         let h = 0;
-        for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) >>> 0;
+        for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0;
         return PALETTE[h % PALETTE.length];
       }
 
       const picker = document.getElementById('picker');
-      const configure = document.getElementById('configure');
       const theForm = document.getElementById('the-form');
       const listEl = document.getElementById('provider-list');
       const searchEl = document.getElementById('provider-search');
       const settingsWrap = document.getElementById('bookmark-settings');
       const nameInput = document.getElementById('bookmark-name');
+      const typeField = document.getElementById('type-field');
       let providers = {};
       let items = [];
 
-      function showError(msg) {
+      function setState(text, isError) {
         listEl.textContent = '';
         const li = document.createElement('li');
-        li.className = 'error';
-        li.textContent = msg;
+        li.className = 'state' + (isError ? ' error' : '');
+        li.textContent = text;
         listEl.appendChild(li);
       }
 
       function renderList(filter) {
         const q = (filter || '').trim().toLowerCase();
-        listEl.textContent = '';
-        const visible = items.filter(it =>
-          !q || it.name.toLowerCase().includes(q) || it.type.toLowerCase().includes(q)
-        );
-
+        const visible = items.filter(it => !q || it.name.toLowerCase().includes(q) || it.type.toLowerCase().includes(q));
         if (!visible.length) {
-          const li = document.createElement('li');
-          li.className = 'empty-state';
-          li.textContent = q ? `No providers match "${filter}".` : 'No providers available.';
-          listEl.appendChild(li);
-          window.electronAPI.resizeToContent();
+          setState(q ? `No providers match “${filter}”.` : 'No providers available.');
           return;
         }
-
+        listEl.textContent = '';
         visible.forEach((it, idx) => {
           const li = document.createElement('li');
           li.className = 'provider-item' + (idx === 0 ? ' active' : '');
           li.dataset.type = it.type;
 
           const avatar = document.createElement('div');
-          avatar.className = 'provider-avatar';
+          avatar.className = 'avatar';
           avatar.style.background = colorFor(it.type);
           avatar.textContent = (it.name || it.type)[0];
 
@@ -335,48 +348,42 @@
           const tp = document.createElement('div');
           tp.className = 'provider-type';
           tp.textContent = it.type;
-          meta.appendChild(nm);
-          meta.appendChild(tp);
+          meta.append(nm, tp);
 
-          li.appendChild(avatar);
-          li.appendChild(meta);
+          li.append(avatar, meta);
           li.addEventListener('click', () => selectProvider(it.type));
           listEl.appendChild(li);
         });
-        window.electronAPI.resizeToContent();
       }
 
       function selectProvider(type) {
         const provider = providers[type];
         if (!provider) return;
         const label = provider.Description || type;
-        document.title = `New ${provider.Name || type} Bookmark`;
+        document.title = `New ${provider.Name || type} bookmark`;
         document.getElementById('config-name').textContent = label;
         const avatar = document.getElementById('config-avatar');
         avatar.style.background = colorFor(type);
         avatar.textContent = (label || type)[0];
 
-        document.getElementById('bookmark-type-field').value = type;
+        typeField.value = type;
         window.api.renderBookmarkSettings(settingsWrap, type);
 
         picker.style.display = 'none';
-        configure.style.display = 'block';
+        theForm.style.display = 'flex';
         nameInput.focus();
-        window.electronAPI.resizeToContent();
       }
 
       function backToPicker() {
-        configure.style.display = 'none';
+        theForm.style.display = 'none';
         settingsWrap.textContent = '';
         nameInput.value = '';
-        picker.style.display = 'block';
+        picker.style.display = 'flex';
         document.title = 'Add Remote';
         searchEl.focus();
-        window.electronAPI.resizeToContent();
       }
 
       document.getElementById('back-btn').addEventListener('click', backToPicker);
-
       searchEl.addEventListener('input', () => renderList(searchEl.value));
       searchEl.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
@@ -404,15 +411,14 @@
       (async function init() {
         try {
           providers = await $main.rclone.providers() || {};
-          items = Object.keys(providers).map(type => ({
-            type,
-            name: providers[type].Description || type
-          })).sort((a, b) => a.name.localeCompare(b.name));
+          items = Object.keys(providers)
+            .map(type => ({ type, name: providers[type].Description || type }))
+            .sort((a, b) => a.name.localeCompare(b.name));
           renderList('');
           searchEl.focus();
         } catch (error) {
           console.error('Failed to load providers:', error);
-          showError('Failed to load providers: ' + (error.message || error));
+          setState('Failed to load providers: ' + (error.message || error), true);
         }
       })();
     })();

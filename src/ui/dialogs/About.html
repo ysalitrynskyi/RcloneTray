@@ -1,69 +1,64 @@
 <!doctype html>
-<html class="transparent">
+<html>
 <head>
+  <meta charset="utf-8">
   <title>About RcloneTray</title>
   <script defer>
     $main.loadAboutStyles();
   </script>
 </head>
 <body>
+  <div class="drag-strip"></div>
   <main>
-    <div class="content">
-      <img src="../icons/source-icon-color.png" width="72" height="72" alt="RcloneTray" class="icon">
-      
-      <div class="text-group">
-        <a href="https://github.com/ysalitrynskyi/RcloneTray" target="_blank">
-          <strong id="app-name"></strong>
-        </a>
-        <div id="app-version">
-          <span id="app-version-prefix">v</span><span id="app-version-content"></span>
-        </div>
+    <img src="../icons/source-icon-color.png" width="84" height="84" alt="RcloneTray" class="app-icon">
+
+    <h1 id="app-name">RcloneTray</h1>
+    <a class="version-pill" id="app-version-link" href="https://github.com/ysalitrynskyi/RcloneTray/releases" target="_blank" rel="noopener">
+      <span id="app-version-content">…</span>
+    </a>
+
+    <p class="tagline">System-tray manager for Rclone — mount, sync &amp; serve your remotes.</p>
+
+    <div class="engine">
+      <span>Rclone engine</span>
+      <code id="rclone-version">checking…</code>
+    </div>
+
+    <div class="actions">
+      <button class="primary" id="btn-updates">Check for updates</button>
+      <div class="action-row">
+        <button class="ghost" id="btn-issue">Report an issue</button>
+        <button class="ghost" id="btn-license">License</button>
       </div>
-
-      <div class="text-group">
-        <a href="https://rclone.org/" target="_blank">
-          <strong>Rclone</strong>
-        </a>
-        <div id="rclone-version"></div>
-      </div>
     </div>
 
-    <div class="button-group">
-      <button onclick="window.open('https://github.com/ysalitrynskyi/RcloneTray/releases')">
-        Check for Updates
-      </button>
-      <button onclick="window.open('https://github.com/ysalitrynskyi/RcloneTray/issues')">
-        Report Issue
-      </button>
-      <button onclick="window.open('https://raw.githubusercontent.com/ysalitrynskyi/RcloneTray/master/LICENSE.txt')">
-        View License
-      </button>
-    </div>
-
-    <div class="credits">
-      Created by <a href="https://github.com/ysalitrynskyi" target="_blank">Yevhen Salitrynskyi</a><br>
-      Based on work by <a href="https://github.com/dimitrov-adrian" target="_blank">Adrian Dimitrov</a>
-    </div>
+    <footer class="credits">
+      <span>Built by <a href="https://github.com/ysalitrynskyi" target="_blank" rel="noopener">Yevhen Salitrynskyi</a></span>
+      <span>Originally by <a href="https://github.com/dimitrov-adrian" target="_blank" rel="noopener">Adrian Dimitrov</a></span>
+    </footer>
   </main>
 
   <script>
-    async function init() {
+    function open(url) { window.open(url); }
+    document.getElementById('btn-updates').addEventListener('click', () => open('https://github.com/ysalitrynskyi/RcloneTray/releases'));
+    document.getElementById('btn-issue').addEventListener('click', () => open('https://github.com/ysalitrynskyi/RcloneTray/issues'));
+    document.getElementById('btn-license').addEventListener('click', () => open('https://raw.githubusercontent.com/ysalitrynskyi/RcloneTray/master/LICENSE.txt'));
+
+    (async function init() {
       try {
         const [appName, appVersion, rcloneVersion] = await Promise.all([
           $main.app.getName(),
           $main.app.getVersion(),
           $main.rclone.version()
         ]);
-        
         document.getElementById('app-name').textContent = appName || 'RcloneTray';
-        document.getElementById('app-version-content').textContent = appVersion || '?';
-        document.getElementById('rclone-version').textContent = rcloneVersion || 'Not found';
+        document.getElementById('app-version-content').textContent = 'v' + (appVersion || '?');
+        document.getElementById('rclone-version').textContent = rcloneVersion || 'not found';
       } catch (error) {
         console.error('Failed to load app info:', error);
+        document.getElementById('rclone-version').textContent = 'unavailable';
       }
-    }
-    
-    init();
+    })();
   </script>
 </body>
 </html>

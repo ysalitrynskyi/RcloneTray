@@ -188,7 +188,11 @@ npm run publish
 
 ## 📋 Changelog
 
-### v1.4.0 (Latest)
+### v1.4.1 (Latest)
+- **Redesigned dialogs** - Add Remote, Edit Bookmark and About rebuilt with a refined, native look (fixes broken serif fonts, clipped content, and the see-through About window)
+- **Cleaner app icon** - removed a white plate that peeked out behind the icon's rounded corners
+
+### v1.4.0
 - **New app icon** - custom RcloneTray icon for macOS/Windows/Linux (no more default Electron icon)
 - **Mounts fixed** - mounts now run with `--vfs-cache-mode writes` by default, so files actually save and apps can edit them; configurable in Preferences
 - **Redesigned "Add Remote"** - searchable provider list with avatars instead of the oversized native dropdown, plus a clear pick-then-configure flow

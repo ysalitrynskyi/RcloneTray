@@ -5,6 +5,28 @@ All notable changes to RcloneTray will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-06-19
+
+### Changed
+- **Full visual redesign of the dialogs** (Add Remote, Edit Bookmark, About) to a
+  refined, native desktop-utility aesthetic with an OKLCH indigo palette, clear type
+  hierarchy, monospace for version/identifier data, and proper light/dark support.
+- Add Remote / Edit Bookmark are now fully self-styled (no runtime CSS injection),
+  using fixed flex layouts so content never clips behind the window edge and there is
+  consistent breathing room at the bottom.
+- About window buttons now follow a clear hierarchy (one primary action + ghost
+  secondary actions) instead of three identical buttons.
+
+### Fixed
+- **Serif/“broken” font in the bookmark dialogs.** The dialogs relied on a stylesheet
+  injected asynchronously at runtime; when it wasn't applied the UI fell back to a
+  serif system font. Styles are now inlined, so typography is always correct.
+- **About window showed a transparent/see-through background** (other windows bled
+  through). Removed the vibrancy/transparency; it's now a solid themed window.
+- **App icon had a white plate peeking out behind the rounded corners.** The icon
+  artwork is now masked to a clean squircle with transparent corners, and all icon
+  formats (`.icns`/`.ico`/`.png`) plus the in-app About icon were regenerated.
+
 ## [1.4.0] - 2026-06-19
 
 ### Added
