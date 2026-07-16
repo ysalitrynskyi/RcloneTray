@@ -1,10 +1,10 @@
 'use strict'
 
 import * as path from 'path'
-import * as fs from 'fs/promises'
 import { readFileSync, existsSync, mkdirSync } from 'fs'
 import { app } from 'electron'
 import { Settings, SettingKey, SettingValue } from './types'
+import { writeJsonAtomic } from './settings/repository'
 
 /**
  * Default settings. Used both as initial cache and to restore on `remove`.
@@ -82,7 +82,7 @@ export function get(item: SettingKey, defaultValue?: SettingValue): SettingValue
  */
 export function set<K extends SettingKey>(item: K, newValue: Settings[K]): void {
   cache[item] = newValue
-  updateFile()
+  void updateFile().catch(() => undefined)
 }
 
 /**
@@ -92,7 +92,7 @@ export function remove(item: SettingKey): boolean {
   if (has(item)) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (cache as any)[item] = DEFAULTS[item]
-    updateFile()
+    void updateFile().catch(() => undefined)
     return true
   }
 
@@ -125,11 +125,10 @@ export function getAll(): Settings {
  */
 async function updateFile(): Promise<void> {
   try {
-    const jsonContent = JSON.stringify(cache)
-    await fs.mkdir(settingsDir, { recursive: true })
-    await fs.writeFile(settingsFile, jsonContent)
+    await writeJsonAtomic(settingsFile, cache)
   } catch (err) {
     console.error('Error updating settings file:', err)
+    throw err
   }
 }
 

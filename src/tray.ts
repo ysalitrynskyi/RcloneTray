@@ -91,7 +91,7 @@ function bookmarkActionRouter(this: Bookmark | null, action: BookmarkAction, ...
       if (this) rclone.openNCDU(this)
       break
     case 'open-web-browser':
-      shell.openExternal(args[0] as string)
+      rclone.openExternalUrl(args[0] as string)
       break
     case 'open-config':
       shell.openPath(rclone.getConfigFile())
@@ -118,7 +118,6 @@ function generateBookmarkActionsSubmenu(bookmark: Bookmark): BookmarkMenuResult 
     return {
       template: {
         label: bookmark.$name || '<Unknown>',
-        enabled: false,
         type: 'submenu',
         submenu: [
           {
@@ -351,7 +350,7 @@ function refreshTrayMenu(): void {
   let isConnected = false
 
   menuItems.push({
-    label: 'New Bookmark',
+    label: 'New Remote',
     click: dialogs.addBookmark,
     accelerator: 'CommandOrControl+N'
   })
@@ -379,6 +378,10 @@ function refreshTrayMenu(): void {
       label: 'Preferences',
       click: dialogs.preferences,
       accelerator: 'CommandOrControl+,'
+    },
+    {
+      label: 'Activity',
+      click: dialogs.activity
     },
     {
       label: 'About',

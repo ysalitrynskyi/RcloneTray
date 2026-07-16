@@ -83,7 +83,7 @@ test.describe('Build artifacts smoke', () => {
 
   test('HTML dialogs exist', () => {
     const dialogsPath = path.join(__dirname, '../../src/ui/dialogs')
-    for (const f of ['About.html', 'Preferences.html', 'AddBookmark.html', 'EditBookmark.html']) {
+    for (const f of ['About.html', 'Preferences.html', 'AddBookmark.html', 'EditBookmark.html', 'Activity.html']) {
       expect(fs.existsSync(path.join(dialogsPath, f))).toBe(true)
     }
   })

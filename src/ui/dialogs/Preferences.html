@@ -55,7 +55,7 @@
     .form-help { font-size: 11px; color: var(--text-2); margin-top: 4px; line-height: 1.4; }
 
     /* Checkbox */
-    .checkbox-wrapper { display: flex; align-items: center; }
+    .checkbox-wrapper { display: flex; align-items: center; min-height: 32px; cursor: pointer; }
     .checkbox-label { margin-left: 8px; color: var(--text-2); font-size: 12px; }
 
     /* Section */
@@ -78,7 +78,7 @@
   <div id="loading" class="state" style="margin-top: 40px;">Loading preferences... <span class="spinner"></span></div>
   
   <form id="preferences-form" class="container" style="display: none;">
-    <nav class="sidebar">
+    <nav class="sidebar" role="tablist" aria-label="Settings sections">
       <div class="sidebar-title">Settings</div>
       <div class="sidebar-item active" data-panel="general">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -140,7 +140,7 @@
               <div class="form-control">
                 <div class="checkbox-wrapper">
                   <input type="checkbox" name="tray_menu_show_type" id="tray_menu_show_type">
-                  <span class="checkbox-label">Display bookmark type in tray menu</span>
+                  <span class="checkbox-label">Display remote type in tray menu</span>
                 </div>
               </div>
             </div>
@@ -412,14 +412,46 @@
         loadingEl.style.display = 'none';
         formEl.style.display = 'flex';
 
+        // Bind visible labels to their controls.
+        document.querySelectorAll('.form-row').forEach(row => {
+          const label = row.querySelector('label.form-label');
+          const control = row.querySelector('input, select, textarea');
+          if (label && control && control.id) {
+            label.htmlFor = control.id;
+          }
+          if (control && control.type === 'checkbox') {
+            row.addEventListener('click', (event) => {
+              if (event.target === control || event.target.tagName === 'LABEL') return;
+              control.checked = !control.checked;
+              control.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+          }
+        });
+
         // Tab navigation
         document.querySelectorAll('.sidebar-item').forEach(item => {
-          item.addEventListener('click', function() {
+          item.setAttribute('role', 'tab');
+          item.setAttribute('tabindex', item.classList.contains('active') ? '0' : '-1');
+          item.setAttribute('aria-selected', item.classList.contains('active') ? 'true' : 'false');
+          const activatePanel = function() {
             const panelId = this.dataset.panel;
-            document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+            document.querySelectorAll('.sidebar-item').forEach(i => {
+              i.classList.remove('active');
+              i.setAttribute('tabindex', '-1');
+              i.setAttribute('aria-selected', 'false');
+            });
             this.classList.add('active');
+            this.setAttribute('tabindex', '0');
+            this.setAttribute('aria-selected', 'true');
             document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
             document.getElementById('panel-' + panelId)?.classList.add('active');
+          };
+          item.addEventListener('click', activatePanel);
+          item.addEventListener('keydown', function(event) {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              activatePanel.call(this);
+            }
           });
         });
 

@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  RCLONE_VERSION: v1.74.4
+
 jobs:
   lint-and-typecheck:
     name: Lint & Typecheck
@@ -135,6 +138,11 @@ jobs:
 
       - name: Pack (electron-builder --dir)
         run: npx electron-builder --linux --dir --publish never
+
+      - name: Verify bundled rclone in pack
+        run: |
+          test -x release/linux-unpacked/resources/rclone/linux/amd64/rclone
+          test -f release/linux-unpacked/resources/rclone/LICENSE
 
   all-checks-pass:
     name: All Checks Pass

@@ -15,7 +15,14 @@ Quick reference for whoever (human or agent) works on RcloneTray next.
 |------|----------------|
 | `src/main.ts` | Electron main process, all `ipcMain` handlers, app lifecycle |
 | `src/tray.ts` | System tray icon + dynamic menu (per-bookmark actions) |
-| `src/rclone.ts` | rclone process management, bookmark CRUD, mount/sync/serve, command builders |
+| `src/rclone.ts` | rclone orchestration, bookmark CRUD, mount/sync/serve |
+| `src/rclone/command.ts` | command formatting, `--auto-confirm` policy, terminal-safe quoting |
+| `src/rclone/config-repository.ts` | atomic `rclone.conf` read/write helpers |
+| `src/rclone/path-safety.ts` | local sync path guards (root/drive protection) |
+| `src/rclone/job-state.ts` | central job/activity state and log tails |
+| `src/rclone/external-links.ts` | external URL protocol allow-list |
+| `src/ipc/validation.ts` | runtime validation for IPC inputs |
+| `src/settings/repository.ts` | atomic settings writes |
 | `src/settings.ts` | Persistent settings (`settings.json` in userData), defaults, coercion |
 | `src/dialogs.ts` | BrowserWindow factory for dialogs, app menu, error/confirm dialogs |
 | `src/dialogs-preload.ts` | `contextBridge` API exposed to renderer (the only renderer↔main surface) |
@@ -26,8 +33,9 @@ Quick reference for whoever (human or agent) works on RcloneTray next.
 
 All dialog windows use `contextIsolation: true`, `nodeIntegration: false`,
 `sandbox: true`, `webviewTag: false`. The renderer only talks to main through the
-preload bridge. External links go through `setWindowOpenHandler` → `shell.openExternal`.
-Keep it that way.
+preload bridge. External links go through an allow-list before `shell.openExternal`.
+Keep it that way. Destructive sync operations must keep dry-run confirmation and
+root/drive path guards.
 
 ## Commands
 
@@ -44,10 +52,11 @@ npm run dist           # electron-builder for current platform -> release/
 
 ### rclone binaries
 
-`./update-rclone-binaries.sh [darwin|win32|linux|all]` — the optional arg limits
-the download to one platform (CI uses this). Runtime path resolution maps Node's
-`process.arch` (`x64`/`ia32`) to rclone names (`amd64`/`386`) — see `RcloneArchMap`
-in `src/rclone.ts`. **If you add an arch, update that map.**
+`RCLONE_VERSION=v1.74.4 ./update-rclone-binaries.sh [darwin|win32|linux|all]` —
+the optional arg limits the download to one platform (CI uses this). CI/release
+pin `RCLONE_VERSION` for reproducible packaging. Runtime path resolution maps
+Node's `process.arch` (`x64`/`ia32`) to rclone names (`amd64`/`386`) — see
+`RcloneArchMap` in `src/rclone.ts`. **If you add an arch, update that map.**
 
 ## Test isolation env vars
 
@@ -64,10 +73,11 @@ skipped on Windows).
 ## CI / Release
 
 - `.github/workflows/ci.yml` — runs on push/PR to `master`/`develop`:
-  lint+typecheck, unit/integration+coverage, E2E (xvfb), build on 3 OSes,
-  Linux pack smoke.
+  lint+typecheck, unit/integration+coverage thresholds, E2E (xvfb), build on 3 OSes,
+  Linux pack smoke with bundled-rclone assertions.
 - `.github/workflows/release.yml` — on tag `v*`: matrix build, then publishes a
-  GitHub Release with all installers via `softprops/action-gh-release`.
+  GitHub Release with all installers via `softprops/action-gh-release`. Missing
+  installer artifacts are fatal.
   Only `GITHUB_TOKEN` is needed (no Apple/Windows signing certs).
 
 ### Cutting a release
@@ -92,3 +102,6 @@ skipped on Windows).
 - Coverage is high on `settings.ts` and the `rclone.ts` command builders; the
   Electron/UI modules (`main`, `tray`, `dialogs`, preload) are exercised only by
   the E2E smoke test, not unit-covered.
+- Generated artifacts are not source: `dist/`, `coverage/`, `rclone/`,
+  `release/`, `playwright-report/`, and `test-results/` should be regenerated,
+  not restored from git.

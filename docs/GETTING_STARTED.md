@@ -76,11 +76,13 @@ sudo dpkg -i RcloneTray-*.deb
 ## 3. First use
 
 1. Launch RcloneTray — look for its icon in the system tray.
-2. Click the tray icon → **New Bookmark**.
+2. Click the tray icon → **New Remote**.
 3. Pick your storage **provider** (e.g. Google Drive, Dropbox, S3).
 4. Fill in the connection details and **Save**. RcloneTray uses the same config
    as rclone, so existing rclone remotes show up automatically.
-5. Click the bookmark in the tray menu to **Mount**, **Sync**, or **Serve** it.
+5. Click the remote in the tray menu to **Mount**, **Sync**, or **Serve** it.
+6. Open **Activity** from the tray menu when you want to see running jobs, recent
+   logs, or failures.
 
 ---
 
@@ -112,6 +114,11 @@ The standard rclone location:
 
 **How do I password-protect a served remote?**
 **Preferences → Serving** → set a username and password.
+
+**Why does Sync ask for confirmation?**
+`rclone sync` can overwrite or delete files at the destination. RcloneTray shows
+a dry-run preview first and blocks root/drive paths so a wrong mapping is harder
+to run accidentally.
 
 **Something broke / I found a bug.**
 Please open an issue at

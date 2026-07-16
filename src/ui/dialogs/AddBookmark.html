@@ -22,7 +22,7 @@
     </ul>
   </section>
 
-  <!-- Step 2: configure the bookmark -->
+  <!-- Step 2: configure the remote -->
   <form id="the-form" style="display: none;">
     <div id="configure">
       <div class="config-header">
@@ -55,7 +55,7 @@
       </div>
 
       <div class="config-footer">
-        <button type="submit">Create bookmark</button>
+        <button type="submit">Create remote</button>
       </div>
     </div>
   </form>
@@ -83,19 +83,56 @@
       let providers = {};
       let items = [];
 
-      function setState(text, isError) {
+      function setState(title, detail, isError, actionLabel, actionHandler) {
         listEl.textContent = '';
         const li = document.createElement('li');
         li.className = 'state' + (isError ? ' error' : '');
-        li.textContent = text;
+        const heading = document.createElement('div');
+        heading.className = 'state-title';
+        heading.textContent = title;
+        li.appendChild(heading);
+        if (detail) {
+          const body = document.createElement('div');
+          body.className = 'state-detail';
+          body.textContent = detail;
+          li.appendChild(body);
+        }
+        if (actionLabel && actionHandler) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'btn btn-secondary';
+          button.textContent = actionLabel;
+          button.addEventListener('click', actionHandler);
+          li.appendChild(button);
+        }
         listEl.appendChild(li);
       }
 
       function renderList(filter) {
         const q = (filter || '').trim().toLowerCase();
+        if (!items.length) {
+          setState(
+            'No providers loaded.',
+            'Run rclone config in Terminal, then click Retry. Remotes created there appear here automatically.',
+            false,
+            'Retry',
+            loadProviders
+          );
+          return;
+        }
         const visible = items.filter(it => !q || it.name.toLowerCase().includes(q) || it.type.toLowerCase().includes(q));
         if (!visible.length) {
-          setState(q ? `No providers match “${filter}”.` : 'No providers available.');
+          setState(
+            `No providers match “${filter}”.`,
+            'Clear the search or try a provider name like Drive, S3, SFTP, or WebDAV.',
+            false,
+            'Clear search',
+            () => {
+              searchEl.value = '';
+              renderList('');
+              searchEl.focus();
+            }
+          );
           return;
         }
         listEl.textContent = '';
@@ -103,6 +140,9 @@
           const li = document.createElement('li');
           li.className = 'provider-item' + (idx === 0 ? ' active' : '');
           li.dataset.type = it.type;
+          li.tabIndex = 0;
+          li.setAttribute('role', 'button');
+          li.setAttribute('aria-label', `Configure ${it.name}`);
 
           const avatar = document.createElement('div');
           avatar.className = 'avatar';
@@ -121,6 +161,12 @@
 
           li.append(avatar, meta);
           li.addEventListener('click', () => selectProvider(it.type));
+          li.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              selectProvider(it.type);
+            }
+          });
           listEl.appendChild(li);
         });
       }
@@ -130,7 +176,7 @@
         if (!provider) return;
         const label = provider.Name || type;
         const description = provider.Description || '';
-        document.title = `New ${provider.Name || type} bookmark`;
+        document.title = `New ${provider.Name || type} remote`;
         document.getElementById('config-name').textContent = label;
         document.getElementById('config-description').textContent = description;
         const avatar = document.getElementById('config-avatar');
@@ -168,7 +214,7 @@
         event.preventDefault();
         const data = window.electronAPI.getTheFormData(this);
         if (!data.name || !String(data.name).trim()) {
-          window.electronAPI.errorBox('Please enter a name for this bookmark.');
+          window.electronAPI.errorBox('Please enter a name for this remote.');
           return;
         }
         try {
@@ -179,7 +225,8 @@
         }
       });
 
-      (async function init() {
+      async function loadProviders() {
+        setState('Loading providers…', '', false);
         try {
           providers = await $main.rclone.providers() || {};
           items = Object.keys(providers)
@@ -189,9 +236,11 @@
           searchEl.focus();
         } catch (error) {
           console.error('Failed to load providers:', error);
-          setState('Failed to load providers: ' + (error.message || error), true);
+          setState('Failed to load providers.', error.message || String(error), true, 'Retry', loadProviders);
         }
-      })();
+      }
+
+      loadProviders();
     })();
   </script>
 </body>

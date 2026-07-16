@@ -27,7 +27,7 @@
     </div>
 
     <div class="footer">
-      <button type="button" class="btn-danger" id="delete-btn">Delete</button>
+      <button type="button" class="btn-danger" id="delete-btn">Delete remote</button>
       <button type="submit">Save changes</button>
     </div>
   </form>
@@ -75,7 +75,7 @@
 
         deleteBtn.addEventListener('click', async function () {
           const confirmed = await window.electronAPI.confirm(
-            `Delete “${props.$name}”?\n\nThis can't be undone.`
+            `Delete remote “${props.$name}” from rclone.conf?\n\nThis cannot be undone from RcloneTray. Existing cloud files are not deleted.`
           );
           if (!confirmed) return;
           try {

@@ -8,6 +8,9 @@ on:
 permissions:
   contents: write
 
+env:
+  RCLONE_VERSION: v1.74.4
+
 jobs:
   build:
     name: Build ${{ matrix.name }}
@@ -54,6 +57,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Assert installer artifacts exist
+        shell: bash
+        run: |
+          shopt -s nullglob
+          artifacts=(release/*.dmg release/*.zip release/*.exe release/*.AppImage release/*.deb)
+          if [ "${#artifacts[@]}" -lt 1 ]; then
+            echo "No installer artifacts were produced."
+            exit 1
+          fi
+          printf '%s\n' "${artifacts[@]}"
+
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -64,7 +78,7 @@ jobs:
             release/*.exe
             release/*.AppImage
             release/*.deb
-          if-no-files-found: warn
+          if-no-files-found: error
 
   release:
     name: Publish GitHub Release
@@ -84,6 +98,17 @@ jobs:
           mkdir -p dist-release
           find artifacts -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' \) -exec cp {} dist-release/ \;
           ls -la dist-release
+
+      - name: Assert release payload is complete
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(dist-release/*)
+          if [ "${#files[@]}" -lt 5 ]; then
+            echo "Expected at least 5 installer artifacts, got ${#files[@]}."
+            printf '%s\n' "${files[@]}"
+            exit 1
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

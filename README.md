@@ -29,8 +29,9 @@ A simple desktop app that lives in your system tray and gives [Rclone](https://r
 ## Features
 
 - **Mount** remote storage as a local drive.
-- **Sync** files between local folders and remotes (upload and download).
+- **Sync safely** between local folders and remotes (upload and download) with root-path guards and a dry-run confirmation.
 - **Serve** remotes over HTTP, FTP, WebDAV, or Restic.
+- **Activity view** — see active and recent mounts, transfers, servers, logs, and failures.
 - **Bundled Rclone** — works out of the box, no separate install.
 - **Cross-platform** — Windows, macOS, and Linux.
 - **Automatic dark mode** — follows your system theme.
@@ -94,18 +95,18 @@ If you would rather not install a FUSE driver, use the WebDAV serve feature inst
 ## Usage
 
 1. Launch RcloneTray — it starts in your system tray.
-2. Open the tray menu and choose **New Bookmark**.
+2. Open the tray menu and choose **New Remote**.
 3. Pick a provider (Amazon S3, Google Drive, Dropbox, and so on).
 4. Enter your credentials and settings (only the **Name** is required up front; the
    provider-specific fields like bucket, access key, region, and so on appear once you
    pick a provider).
-5. Mount, sync, or serve the remote from the tray menu.
+5. Mount, sync, or serve the remote from the tray menu. Use **Activity** to see running jobs and recent rclone output.
 
 **Prefer the terminal?** You don't have to use the dialog at all. Run `rclone config`
 in your terminal to create or edit remotes — RcloneTray reads the same
 `rclone.conf`, so anything you configure there shows up in the tray automatically
 (and vice-versa). Advanced and provider-specific flags are also available under
-**Advanced** in the bookmark dialog, and global flags under **Preferences → Rclone →
+**Advanced** in the remote dialog, and global flags under **Preferences → Rclone →
 Custom args**.
 
 ## FAQ
@@ -119,7 +120,7 @@ Open **Preferences → Rclone** and uncheck **Use bundled Rclone**.
 <details>
 <summary><b>My drive mounts, but files won't save or editing fails.</b></summary>
 
-Open **Preferences → Rclone → Mounting** and set **VFS cache mode** to **Writes** (the default) or **Full**, then re-mount the bookmark. This lets apps open, edit, and save files on the mounted drive.
+Open **Preferences → Rclone → Mounting** and set **VFS cache mode** to **Writes** (the default) or **Full**, then re-mount the remote. This lets apps open, edit, and save files on the mounted drive.
 </details>
 
 <details>
@@ -181,7 +182,7 @@ brew install rclone   # macOS (Homebrew)
 </details>
 
 <details>
-<summary><b>Nothing happens / an error pops up when I create a bookmark.</b></summary>
+<summary><b>Nothing happens / an error pops up when I create a remote.</b></summary>
 
 Errors from Rclone are now surfaced in the dialog instead of being swallowed. Read
 the message — it usually points at a missing required field. You can always fall back

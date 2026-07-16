@@ -6,6 +6,7 @@ import electronContextMenu from 'electron-context-menu'
 import isDev from 'electron-is-dev'
 import * as settings from './settings'
 import { DialogProps, DialogWindow, Bookmark } from './types'
+import { assertAllowedExternalUrl } from './rclone/external-links'
 
 /**
  * Set the background color
@@ -105,7 +106,13 @@ function createNewDialog(dialogName: string, options?: DialogOptions, props?: Di
 
   // Open links in system default browser.
   theDialog.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+    try {
+      void shell.openExternal(assertAllowedExternalUrl(url)).catch((error) => {
+        console.error('Cannot open external URL:', error)
+      })
+    } catch (error) {
+      console.error('Blocked external URL:', error)
+    }
     return { action: 'deny' }
   })
 
@@ -150,6 +157,21 @@ export function preferences(): void {
     height: 620,
     minWidth: 720,
     minHeight: 520,
+    resizable: true
+  })
+}
+
+/**
+ * Show Activity dialog
+ */
+export function activity(): void {
+  createNewDialog('Activity', {
+    $singleId: 1,
+    title: 'Activity',
+    width: 720,
+    height: 540,
+    minWidth: 560,
+    minHeight: 420,
     resizable: true
   })
 }
@@ -228,12 +250,41 @@ export function uncaughtException(detail: Error | unknown): boolean {
 export function confirmExit(): boolean {
   const choice = dialog.showMessageBoxSync({
     type: 'warning',
-    buttons: ['Yes', 'No'],
+    buttons: ['Cancel', 'Quit RcloneTray'],
+    defaultId: 0,
+    cancelId: 0,
     title: 'Quit RcloneTray',
     message: 'Are you sure you want to quit?',
     detail: 'There are active processes that will be terminated.'
   })
-  return choice === 0
+  return choice === 1
+}
+
+export function confirmTransfer(method: 'upload' | 'download', bookmarkName: string, source: string, destination: string, preview: string): boolean {
+  const action = method === 'upload' ? 'Upload' : 'Download'
+  const choice = dialog.showMessageBoxSync({
+    type: 'warning',
+    buttons: ['Cancel', `${action} now`],
+    defaultId: 0,
+    cancelId: 0,
+    title: `${action} ${bookmarkName}`,
+    message: `${action} can overwrite or delete files at the destination.`,
+    detail: `Source:\n${source}\n\nDestination:\n${destination}\n\nDry-run preview:\n${preview}`
+  })
+  return choice === 1
+}
+
+export function confirmAutomaticUpload(bookmarkName: string, source: string, destination: string): boolean {
+  const choice = dialog.showMessageBoxSync({
+    type: 'warning',
+    buttons: ['Cancel', 'Enable automatic upload'],
+    defaultId: 0,
+    cancelId: 0,
+    title: `Enable automatic upload for ${bookmarkName}?`,
+    message: 'Automatic upload runs rclone sync after local file changes.',
+    detail: `Source:\n${source}\n\nDestination:\n${destination}\n\nFiles deleted locally can be deleted remotely.`
+  })
+  return choice === 1
 }
 
 /**
@@ -256,7 +307,7 @@ export function missingRclone(detail?: Error | unknown, usingBundled = settings.
   })
 
   if (choice === 0) {
-    shell.openExternal('https://rclone.org/downloads/')
+    void shell.openExternal(assertAllowedExternalUrl('https://rclone.org/downloads/'))
     app.exit()
   } else if (choice === 1) {
     settings.set('rclone_use_bundled', true)
@@ -358,12 +409,15 @@ init()
 
 export default {
   about,
+  activity,
   editBookmark,
   addBookmark,
   preferences,
   errorMultiInstance,
   uncaughtException,
   confirmExit,
+  confirmTransfer,
+  confirmAutomaticUpload,
   missingRclone,
   notification
 }

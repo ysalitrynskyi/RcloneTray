@@ -8,6 +8,7 @@ import * as tray from './tray'
 import * as rclone from './rclone'
 import * as settings from './settings'
 import { DialogWindow, SettingKey, Settings } from './types'
+import { assertBookmarkName, assertProviderName, assertSettingKey, assertSettingsPatch } from './ipc/validation'
 
 // Error handler
 
@@ -38,11 +39,11 @@ ipcMain.on('refresh-tray', () => {
 })
 
 ipcMain.handle('get-setting', (_event: IpcMainInvokeEvent, key: SettingKey) => {
-  return settings.get(key)
+  return settings.get(assertSettingKey(key))
 })
 
 ipcMain.handle('settings-merge', (_event: IpcMainInvokeEvent, data: Partial<Settings>) => {
-  return settings.merge(data)
+  return settings.merge(assertSettingsPatch(data))
 })
 
 ipcMain.handle('get-rclone-version', () => {
@@ -54,15 +55,15 @@ ipcMain.handle('get-rclone-providers', () => {
 })
 
 ipcMain.handle('get-rclone-book', (_event: IpcMainInvokeEvent, type: string, name: string, options: Record<string, unknown>) => {
-  return rclone.addBookmark(type, name, options)
+  return rclone.addBookmark(assertProviderName(type), assertBookmarkName(name), options)
 })
 
 ipcMain.handle('get-rclone-delete-book', (_event: IpcMainInvokeEvent, name: string) => {
-  return rclone.deleteBookmark(name)
+  return rclone.deleteBookmark(assertBookmarkName(name))
 })
 
 ipcMain.handle('get-rclone-update-book', (_event: IpcMainInvokeEvent, name: string, options: Record<string, unknown>) => {
-  return rclone.updateBookmark(name, options)
+  return rclone.updateBookmark(assertBookmarkName(name), options)
 })
 
 ipcMain.handle('get-rclone-get-config-file', () => {
@@ -81,12 +82,20 @@ ipcMain.on('get-provider-data', (event: IpcMainEvent, providerName: string) => {
   }
 })
 
+ipcMain.handle('get-provider-data', (_event: IpcMainInvokeEvent, providerName: string) => {
+  return rclone.getProvider(assertProviderName(providerName))
+})
+
+ipcMain.handle('get-job-state', () => {
+  return rclone.getJobStates()
+})
+
 ipcMain.handle('rclone-get-config', async () => {
   return rclone.getConfig()
 })
 
 ipcMain.handle('settings-get', async (_event: IpcMainInvokeEvent, key: SettingKey) => {
-  return settings.get(key)
+  return settings.get(assertSettingKey(key))
 })
 
 ipcMain.on('settings-set', (_event: IpcMainEvent, key: SettingKey, value: Settings[SettingKey]) => {
@@ -112,6 +121,27 @@ ipcMain.on('popup-context-menu', (_event: IpcMainEvent, menuTemplate: Electron.M
   menu.popup({ window: BrowserWindow.getFocusedWindow() || undefined })
 })
 
+ipcMain.handle('show-select-menu', async (event: IpcMainInvokeEvent, payload: { items?: Array<{ label: string; value: string }> }) => {
+  const items = Array.isArray(payload?.items) ? payload.items : []
+  return await new Promise<string | null>((resolve) => {
+    let settled = false
+    const finish = (value: string | null): void => {
+      if (!settled) {
+        settled = true
+        resolve(value)
+      }
+    }
+    const menu = Menu.buildFromTemplate(items.map((item) => ({
+      label: String(item.label),
+      click: () => finish(String(item.value))
+    })))
+    menu.popup({
+      window: BrowserWindow.fromWebContents(event.sender) || undefined,
+      callback: () => finish(null)
+    })
+  })
+})
+
 ipcMain.handle('show-message-box', async (_event: IpcMainInvokeEvent, { message }: { message: string }) => {
   const response = await showMessageBox({
     message,
@@ -123,8 +153,9 @@ ipcMain.handle('show-message-box', async (_event: IpcMainInvokeEvent, { message 
 ipcMain.handle('confirm-dialog', async (_event: IpcMainInvokeEvent, { message }: { message: string }) => {
   const response = await showMessageBox({
     type: 'question',
-    buttons: ['Yes', 'No'],
+    buttons: ['Cancel', 'Confirm'],
     defaultId: 0,
+    cancelId: 0,
     message: message
   })
   return response.response

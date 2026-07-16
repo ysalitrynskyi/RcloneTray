@@ -37,7 +37,7 @@ html, body {
   font-family: var(--font);
   background: var(--bg);
   color: var(--text);
-  user-select: none;
+  user-select: text;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -45,6 +45,7 @@ html, body {
 body { -webkit-app-region: drag; }
 .drag-strip { position: fixed; top: 0; left: 0; right: 0; height: 28px; }
 button, a { -webkit-app-region: no-drag; }
+button { user-select: none; }
 
 main {
   height: 100%;

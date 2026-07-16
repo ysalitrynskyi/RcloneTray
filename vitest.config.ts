@@ -10,7 +10,13 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
       include: ['src/**/*.ts'],
-      exclude: ['src/**/*.test.ts', 'src/**/*.spec.ts', 'src/types.ts']
+      exclude: ['src/**/*.test.ts', 'src/**/*.spec.ts', 'src/types.ts'],
+      thresholds: {
+        statements: 20,
+        branches: 20,
+        functions: 20,
+        lines: 20
+      }
     },
     testTimeout: 10000
   }

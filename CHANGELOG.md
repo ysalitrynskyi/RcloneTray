@@ -5,6 +5,26 @@ All notable changes to RcloneTray will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Activity window showing active/recent rclone jobs, status, URIs, messages, and log tails.
+- Runtime job state store for mounts, transfers, and servers.
+- Safety/unit tests for root-path sync guards, external-link allow-listing, and terminal command quoting.
+
+### Changed
+- Sync and automatic upload now require safer confirmation flows; manual sync shows a dry-run preview first.
+- `rclone.conf` and settings writes are atomic to reduce corruption/partial-write risk.
+- Rclone helper downloads can be pinned with `RCLONE_VERSION`; CI/release pin `v1.74.4`.
+- CI now enforces coverage thresholds and release artifact assertions.
+- Add Remote, Preferences, and Activity empty states/keyboard affordances were tightened after visual review.
+
+### Fixed
+- Root/drive paths are rejected for sync mappings on macOS, Linux, and Windows.
+- Automatic upload errors are caught and reported instead of surfacing as uncaught exceptions.
+- External URLs are allowed only for expected public protocols.
+- Generated provider-field labels are now real `<label>` elements.
+
 ## [1.6.0] - 2026-06-19
 
 The big fix: provider forms (S3 and others) only showed the **Name** field. Plus a

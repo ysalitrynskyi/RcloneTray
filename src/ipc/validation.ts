@@ -1,0 +1,49 @@
+import { SettingKey, Settings } from '../types'
+
+const SettingKeys: SettingKey[] = [
+  'tray_menu_show_type',
+  'rclone_use_bundled',
+  'rclone_config',
+  'custom_args',
+  'rclone_cache_files',
+  'rclone_cache_directories',
+  'rclone_mount_vfs_cache_mode',
+  'rclone_sync_enable',
+  'rclone_sync_autoupload_delay',
+  'rclone_ncdu_enable',
+  'rclone_serving_http_enable',
+  'rclone_serving_ftp_enable',
+  'rclone_serving_restic_enable',
+  'rclone_serving_webdav_enable',
+  'rclone_serving_username',
+  'rclone_serving_password'
+]
+
+export function assertSettingKey(value: unknown): SettingKey {
+  if (typeof value !== 'string' || !SettingKeys.includes(value as SettingKey)) {
+    throw new Error(`Invalid setting key: ${String(value)}`)
+  }
+  return value as SettingKey
+}
+
+export function assertSettingsPatch(value: unknown): Partial<Settings> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Settings update must be an object.')
+  }
+  Object.keys(value).forEach(assertSettingKey)
+  return value as Partial<Settings>
+}
+
+export function assertBookmarkName(value: unknown): string {
+  if (typeof value !== 'string' || !/^([a-zA-Z0-9\-_]{1,32})$/.test(value)) {
+    throw new Error('Invalid remote name.')
+  }
+  return value
+}
+
+export function assertProviderName(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error('Invalid provider name.')
+  }
+  return value
+}

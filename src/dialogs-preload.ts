@@ -124,6 +124,7 @@ declare global {
       resizeToContent: () => void
       selectDirectory: (defaultDirectory?: string) => Promise<string | null>
       selectFile: (defaultFile?: string) => Promise<string[]>
+      selectFromMenu: (items: Array<{ label: string; value: string }>) => Promise<string | null>
       getTheFormData: (form: HTMLFormElement) => Record<string, unknown>
     }
     htmlElements: {
@@ -153,6 +154,9 @@ contextBridge.exposeInMainWorld('$main', {
   refreshTray: (): void => { ipcRenderer.send('refresh-tray') },
   settingsMerge: (data: Record<string, unknown>): Promise<void> => ipcRenderer.invoke('settings-merge', data),
   getSetting: (key: string): Promise<unknown> => ipcRenderer.invoke('get-setting', key),
+  jobs: {
+    all: (): Promise<unknown[]> => ipcRenderer.invoke('get-job-state')
+  },
   rclone: (() => {
     const invokeIpc = async <T>(channel: string, ...args: unknown[]): Promise<T | undefined> => {
       try {
@@ -193,7 +197,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   confirm: async (message: string): Promise<boolean> => {
     const choice = await ipcRenderer.invoke('confirm-dialog', { message })
-    return choice === 0
+    return choice === 1
   },
   errorBox: (message: string): void => {
     ipcRenderer.send('error-box', { message })
@@ -207,6 +211,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   selectFile: async (defaultFile?: string): Promise<string[]> => {
     return await ipcRenderer.invoke('select-file', defaultFile)
+  },
+  selectFromMenu: async (items: Array<{ label: string; value: string }>): Promise<string | null> => {
+    return await ipcRenderer.invoke('show-select-menu', { items })
   },
   getTheFormData: (form: HTMLFormElement): Record<string, unknown> => {
     const values: Record<string, unknown> = {}
@@ -416,27 +423,28 @@ const htmlElementsApi = {
       })
 
       // Until Electron fixes the datalist, we are stuck with next solution.
-      inputField.addEventListener('click', (event) => {
+      inputField.addEventListener('click', async (event) => {
         const target = event.target as HTMLElement
         const { width, height } = target.getBoundingClientRect()
         if ((event as MouseEvent).offsetX < width - height) {
           return
         }
         event.preventDefault()
-        const menuTemplate: Array<{ label: string; click: () => void }> = []
+        const menuItems: Array<{ label: string; value: string }> = []
         inputFieldOptions.childNodes.forEach((childNode) => {
           const optionNode = childNode as HTMLOptionElement
           if (optionNode.value) {
-            menuTemplate.push({
+            menuItems.push({
               label: optionNode.value,
-              click: () => {
-                inputField.value = optionNode.value
-                inputField.dispatchEvent(new window.Event('change'))
-              }
+              value: optionNode.value
             })
           }
         })
-        ipcRenderer.send('popup-context-menu', menuTemplate)
+        const selected = await ipcRenderer.invoke('show-select-menu', { items: menuItems }) as string | null
+        if (selected) {
+          inputField.value = selected
+          inputField.dispatchEvent(new window.Event('change'))
+        }
       })
     }
 
@@ -457,7 +465,10 @@ const htmlElementsApi = {
     }
 
     // Setup field label.
-    th.innerText = optionFieldDefinition.$Label || optionFieldDefinition.Name
+    const fieldLabel = document.createElement('label')
+    fieldLabel.htmlFor = inputField.id
+    fieldLabel.textContent = optionFieldDefinition.$Label || optionFieldDefinition.Name
+    th.appendChild(fieldLabel)
 
     // Setup helping text.
     if (optionFieldDefinition.Help) {
@@ -529,14 +540,13 @@ contextBridge.exposeInMainWorld('api', {
       range.selectNodeContents(placeholderEl)
       range.deleteContents()
       const msg = document.createElement('div')
-      msg.style.cssText = 'padding:20px;color:#ff3b30;font-size:12px;'
+      msg.className = 'state error'
       msg.textContent = message
       placeholderEl.appendChild(msg)
       resizeToContentWindow()
     }
 
-    // Send an IPC message to the main process to retrieve the provider data
-    ipcRenderer.once('provider-data-reply', (_event, provider: ProviderData | null) => {
+    const renderProvider = (provider: ProviderData | null): void => {
       try {
         if (!provider || !Array.isArray(provider.Options)) {
           renderError('Could not load settings for this provider. Please try again.')
@@ -594,8 +604,13 @@ contextBridge.exposeInMainWorld('api', {
         console.error('Failed to render provider settings:', error)
         renderError('Could not render settings for this provider. Please try again.')
       }
-    })
+    }
 
-    ipcRenderer.send('get-provider-data', providerName)
+    ipcRenderer.invoke('get-provider-data', providerName)
+      .then((provider) => renderProvider(provider as ProviderData | null))
+      .catch((error) => {
+        console.error('Failed to load provider settings:', error)
+        renderError('Could not load settings for this provider. Please try again.')
+      })
   }
 })

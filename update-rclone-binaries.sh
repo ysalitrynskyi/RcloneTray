@@ -6,7 +6,16 @@ bin_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)/rclone"
 tmp_dir=$(mktemp -d 2>/dev/null || mktemp -d -t 'rclone')
 trap 'rm -rf "${tmp_dir}"' EXIT
 
-latest_version=$(curl -fsSL https://downloads.rclone.org/version.txt | tr -d '\r' | awk '{print $2}')
+# Optional first argument limits the download to a single target platform.
+# Accepts: darwin | mac | osx | win32 | windows | win | linux
+# When omitted, binaries for all platforms are downloaded (default behaviour).
+target="${1:-all}"
+
+if [ -n "${RCLONE_VERSION:-}" ]; then
+    latest_version="${RCLONE_VERSION}"
+else
+    latest_version=$(curl -fsSL https://downloads.rclone.org/version.txt | tr -d '\r' | awk '{print $2}')
+fi
 
 if [ -z "${latest_version}" ]; then
     echo "Unable to determine latest rclone version."
@@ -19,7 +28,7 @@ else
     current_version=''
 fi
 
-if [ "${current_version}" == "${latest_version}" ]; then
+if [ "${current_version}" == "${latest_version}" ] && [ "${target}" == "all" ]; then
     echo "Already have the most recent rclone binaries."
     exit
 else
@@ -46,11 +55,6 @@ download_and_extract() {
         fi
     fi
 }
-
-# Optional first argument limits the download to a single target platform.
-# Accepts: darwin | mac | osx | win32 | windows | win | linux
-# When omitted, binaries for all platforms are downloaded (default behaviour).
-target="${1:-all}"
 
 download_darwin() {
     download_and_extract "osx" "amd64" "darwin"

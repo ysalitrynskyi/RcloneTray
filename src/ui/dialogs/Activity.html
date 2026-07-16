@@ -1,0 +1,103 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Activity</title>
+  <link rel="stylesheet" href="../styles/ui.css">
+</head>
+<body>
+  <main class="activity-shell">
+    <header class="activity-header">
+      <div>
+        <h1>Activity</h1>
+        <p>Mounts, transfers, servers, and recent rclone output.</p>
+      </div>
+      <button type="button" class="btn btn-secondary" id="refresh-btn">Refresh</button>
+    </header>
+    <section class="activity-list" id="activity-list">
+      <div class="state">Loading activity… <span class="spinner"></span></div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      const list = document.getElementById('activity-list');
+      const refreshBtn = document.getElementById('refresh-btn');
+
+      function renderEmpty() {
+        list.textContent = '';
+        const empty = document.createElement('div');
+        empty.className = 'state';
+        const title = document.createElement('div');
+        title.className = 'state-title';
+        title.textContent = 'No active or recent jobs.';
+        const detail = document.createElement('div');
+        detail.className = 'state-detail';
+        detail.textContent = 'Mounts, syncs, and servers will appear here with logs, status, and failure details.';
+        empty.append(title, detail);
+        list.appendChild(empty);
+      }
+
+      function renderJob(job) {
+        const card = document.createElement('article');
+        card.className = 'job-card status-' + job.status;
+
+        const top = document.createElement('div');
+        top.className = 'job-topline';
+
+        const title = document.createElement('div');
+        title.className = 'job-title';
+        title.textContent = job.label || job.id;
+
+        const status = document.createElement('span');
+        status.className = 'job-status';
+        status.textContent = job.status;
+
+        top.append(title, status);
+        card.appendChild(top);
+
+        const meta = document.createElement('div');
+        meta.className = 'job-meta';
+        meta.textContent = [
+          job.kind,
+          job.bookmarkName,
+          job.uri,
+          job.message
+        ].filter(Boolean).join(' • ');
+        card.appendChild(meta);
+
+        if (Array.isArray(job.logTail) && job.logTail.length) {
+          const log = document.createElement('pre');
+          log.className = 'job-log';
+          log.textContent = job.logTail.slice(-8).join('\n');
+          card.appendChild(log);
+        }
+
+        return card;
+      }
+
+      async function refresh() {
+        try {
+          const jobs = await $main.jobs.all();
+          if (!jobs.length) {
+            renderEmpty();
+            return;
+          }
+          list.textContent = '';
+          jobs.forEach(job => list.appendChild(renderJob(job)));
+        } catch (error) {
+          list.textContent = '';
+          const div = document.createElement('div');
+          div.className = 'state error';
+          div.textContent = 'Could not load activity: ' + (error.message || error);
+          list.appendChild(div);
+        }
+      }
+
+      refreshBtn.addEventListener('click', refresh);
+      refresh();
+      window.setInterval(refresh, 2000);
+    })();
+  </script>
+</body>
+</html>

@@ -86,6 +86,20 @@ export interface ProcessRegistry {
   [id: string]: ProcessRegistryEntry
 }
 
+export interface JobState {
+  id: string
+  bookmarkName: string
+  kind: string
+  label: string
+  status: string
+  startedAt: string
+  endedAt?: string
+  pid?: number
+  uri?: string
+  message?: string
+  logTail: string[]
+}
+
 // Automatic upload types
 export interface AutomaticUploadEntry {
   watcher: import('chokidar').FSWatcher | null
@@ -142,6 +156,7 @@ export type IPCChannels = {
   'get-rclone-get-config-file': { args: []; return: string }
   'rclone-get-config': { args: []; return: BookmarksCache }
   'get-provider-data': { args: [providerName: string]; return: Provider }
+  'get-job-state': { args: []; return: JobState[] }
   
   // Autostart
   'is-autostart': { args: []; return: boolean }
