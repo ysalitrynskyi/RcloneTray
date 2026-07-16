@@ -20,7 +20,7 @@ Quick reference for whoever (human or agent) works on RcloneTray next.
 | `src/dialogs.ts` | BrowserWindow factory for dialogs, app menu, error/confirm dialogs |
 | `src/dialogs-preload.ts` | `contextBridge` API exposed to renderer (the only renderer↔main surface) |
 | `src/types.ts` | Shared types |
-| `src/ui/` | HTML dialogs, CSS (`ui-darwin/win32/linux.css`), icons |
+| `src/ui/` | HTML dialogs, shared CSS (`ui.css`, `about.css`), icons |
 
 ## Security model
 
