@@ -194,6 +194,7 @@ export function appendCustomRcloneCommandArgs(commandArray: string[], bookmarkNa
  * Maximum output buffer for rclone commands (config dump can be large)
  */
 const RcloneExecMaxBuffer = 32 * 1024 * 1024
+const RclonePreviewTimeoutMs = 30 * 1000
 
 /**
  * Execute async Rclone command.
@@ -236,7 +237,8 @@ function doCommandSyncCombinedOutput(command: string[]): string {
   }
   const result = spawnSync(cmd[0], cmd.slice(1), {
     maxBuffer: RcloneExecMaxBuffer,
-    encoding: 'utf8'
+    encoding: 'utf8',
+    timeout: RclonePreviewTimeoutMs
   })
   if (result.error) {
     throw result.error
@@ -262,13 +264,15 @@ function doCommandInTerminal(command: string[]): void {
     const escapedCmd = cmdStr.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
     spawn('/usr/bin/osascript', ['-e', `tell application "Terminal" to do script "${escapedCmd}" activate`])
   } else if (process.platform === 'linux') {
-    const tempCmdWrapper = path.join(tempDir, 'rclonetray-linux-cmd-wrapper.sh')
+    const tempCmdDir = fs.mkdtempSync(path.join(tempDir, 'rclonetray-'))
+    fs.chmodSync(tempCmdDir, 0o700)
+    const tempCmdWrapper = path.join(tempCmdDir, 'cmd-wrapper.sh')
     const data = new Uint8Array(Buffer.from(`#!/usr/bin/env sh\nset -e\n${cmdStr}\n`))
-    fs.writeFile(tempCmdWrapper, data, (err) => {
+    fs.writeFile(tempCmdWrapper, data, { mode: 0o700, flag: 'wx' }, (err) => {
       if (err) {
         throw new Error('Cannot open terminal')
       } else {
-        fs.chmodSync(tempCmdWrapper, 0o755)
+        fs.chmodSync(tempCmdWrapper, 0o700)
         spawn('x-terminal-emulator', ['-e', tempCmdWrapper], {
           detached: true,
           stdio: 'ignore'
@@ -276,10 +280,7 @@ function doCommandInTerminal(command: string[]): void {
       }
     })
   } else if (process.platform === 'win32') {
-    spawn('cmd.exe', ['/K', formatTerminalCommand(command, 'win32')], {
-      detached: true,
-      stdio: 'ignore'
-    }).unref()
+    throw new Error('Opening rclone console commands in a Windows terminal is not supported by this build.')
   }
 }
 
@@ -683,8 +684,8 @@ function fireRcloneUpdateActions(eventName?: string): void {
 /**
  * Perform Rclone sync command
  */
-function buildSyncCommand(method: 'upload' | 'download', bookmark: Bookmark): string[] {
-  const cmd = ['sync']
+function buildTransferCommand(method: 'upload' | 'download', bookmark: Bookmark, transferMode: 'sync' | 'copy' = 'sync'): string[] {
+  const cmd: string[] = [transferMode]
   if (method === 'upload') {
     cmd.push(bookmark._rclonetray_local_path_map || '', getBookmarkRemoteWithRoot(bookmark))
   } else {
@@ -696,7 +697,8 @@ function buildSyncCommand(method: 'upload' | 'download', bookmark: Bookmark): st
 
 function buildSyncPreview(method: 'upload' | 'download', bookmark: Bookmark): { ok: boolean; text: string } {
   try {
-    const output = doCommandSyncCombinedOutput([...buildSyncCommand(method, bookmark), '--dry-run'])
+    const previewCommand = appendCustomRcloneCommandArgs(buildTransferCommand(method, bookmark), bookmark.$name)
+    const output = doCommandSyncCombinedOutput([...previewCommand, '--dry-run'])
     const lines = output.trim().split(/\r?\n/).filter(Boolean).slice(-12)
     return {
       ok: true,
@@ -731,7 +733,7 @@ function sync(method: 'upload' | 'download', bookmark: Bookmark, options: { skip
     throw new Error('Cannot perform downloading and uploading in same time.')
   }
 
-  const cmd = buildSyncCommand(method, bookmark)
+  const cmd = buildTransferCommand(method, bookmark, options.skipConfirm ? 'copy' : 'sync')
   if (!options.skipConfirm) {
     const preview = buildSyncPreview(method, bookmark)
     if (!preview.ok) {

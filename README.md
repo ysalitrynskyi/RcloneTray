@@ -234,6 +234,7 @@ rclone/               Bundled rclone binaries
 
 Recent highlights — see [CHANGELOG.md](CHANGELOG.md) for the full history.
 
+- **v1.7.0** — Safety/release hardening: sync now blocks root/relative local paths and shows a dry-run preview before destructive runs; automatic upload copies changes without mirroring deletes; Activity shows rclone job state/logs; IPC/external links/terminal launch paths hardened; CI/release gates now verify tests, coverage, pinned rclone, and artifacts.
 - **v1.6.0** — Fixed provider forms showing only the Name field (S3 and others now render all fields); provider-specific options correctly show/hide per sub-provider; bundled Rclone auto-repairs macOS quarantine; cleaner dialog header; terminal/`rclone config` guidance in-app and in the docs. macOS is the primary tested platform.
 - **v1.5.1** — Fixed bookmark creation silently failing: errors (like a missing required S3 bucket) are now shown in the dialog instead of the window just closing.
 - **v1.5.0** — Reliability pass (clearer errors, safer add/update/delete, native file-manager open); unified `ui.css` design system with form-field fixes; platform-aware "Show in Finder/Explorer/Files" labels.

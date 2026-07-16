@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-07-16
+
 ### Added
 - Activity window showing active/recent rclone jobs, status, URIs, messages, and log tails.
 - Runtime job state store for mounts, transfers, and servers.

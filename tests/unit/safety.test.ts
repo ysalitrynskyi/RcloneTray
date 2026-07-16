@@ -18,6 +18,11 @@ describe('path safety', () => {
     expect(getSyncLocalPathError('/Users/test/backup', 'darwin')).toBeNull()
     expect(getSyncLocalPathError('C:\\Users\\test\\backup', 'win32')).toBeNull()
   })
+
+  it('blocks relative local folders', () => {
+    expect(getSyncLocalPathError('relative/folder', 'darwin')).toContain('relative')
+    expect(getSyncLocalPathError('relative\\folder', 'win32')).toContain('relative')
+  })
 })
 
 describe('external link safety', () => {

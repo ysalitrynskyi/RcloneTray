@@ -34,6 +34,11 @@ export function getSyncLocalPathError(localPath: string | undefined, platform: N
     return 'Local path mapping is not set for this remote.'
   }
 
+  const pathApi = platform === 'win32' ? path.win32 : path.posix
+  if (!pathApi.isAbsolute(localPath.trim())) {
+    return `Refusing to sync a relative local path: ${localPath}`
+  }
+
   if (isRootOrDrivePath(localPath, platform)) {
     return `Refusing to sync a root or drive path: ${localPath}`
   }

@@ -11,7 +11,8 @@ function atomicWriteFile(filePath: string, content: string): void {
   }
 
   const tmpPath = path.join(dir, `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`)
-  fs.writeFileSync(tmpPath, content)
+  fs.writeFileSync(tmpPath, content, { mode: 0o600 })
+  fs.chmodSync(tmpPath, 0o600)
   fs.renameSync(tmpPath, filePath)
 }
 

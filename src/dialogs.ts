@@ -281,8 +281,8 @@ export function confirmAutomaticUpload(bookmarkName: string, source: string, des
     defaultId: 0,
     cancelId: 0,
     title: `Enable automatic upload for ${bookmarkName}?`,
-    message: 'Automatic upload runs rclone sync after local file changes.',
-    detail: `Source:\n${source}\n\nDestination:\n${destination}\n\nFiles deleted locally can be deleted remotely.`
+    message: 'Automatic upload copies changed local files after file changes.',
+    detail: `Source:\n${source}\n\nDestination:\n${destination}\n\nDeletes are not mirrored automatically. Use manual Upload when you need a full sync.`
   })
   return choice === 1
 }
