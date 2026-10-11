@@ -36,3 +36,9 @@ export function formatTerminalCommand(command: string[], platform: NodeJS.Platfo
   const quote = platform === 'win32' ? quoteWindowsArg : quotePosixArg
   return command.map(quote).join(' ')
 }
+
+const PERFORMANCE_VERBS = ['mount', 'serve', 'sync', 'copy', 'move', 'ncdu']
+
+export function shouldAppendPerformanceFlags(command: string[]): boolean {
+  return PERFORMANCE_VERBS.includes(command[0])
+}

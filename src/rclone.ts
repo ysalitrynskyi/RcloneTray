@@ -10,7 +10,8 @@ import chokidar from 'chokidar'
 import { app, powerMonitor, shell } from 'electron'
 import * as settings from './settings'
 import * as dialogs from './dialogs'
-import { formatTerminalCommand, shouldAppendAutoConfirm } from './rclone/command'
+import { formatTerminalCommand, shouldAppendAutoConfirm, shouldAppendPerformanceFlags } from './rclone/command'
+import { obscureSecret } from './rclone/obscure'
 import { AUTO_UPLOAD_IGNORED, automaticUploadDelay } from './rclone/auto-upload'
 import { sanitizeCustomArgs, splitCommandArgs } from './rclone/custom-args'
 import { extractServeUrl, isFatalLog, isMountAttemptLine, parseLogLine, progressFromLog, redactSecrets, WatchedJobKind } from './rclone/log-lines'
@@ -139,28 +140,30 @@ const AutomaticUploadRegistry: AutoUploadRegistryType = {}
  */
 function prepareRcloneCommand(command: string[]): string[] {
   const appendAutoConfirm = shouldAppendAutoConfirm(command)
+  const appendPerformance = shouldAppendPerformanceFlags(command)
   const config = getConfigFile()
   if (config) {
     command.unshift('--config', config)
   }
   command.unshift('--ask-password=false')
-
-  if (useBundledRclone()) {
-    prepareBundledRcloneBinary()
-    command.unshift(activeBundledBinary)
-  } else {
-    command.unshift(resolveOnPath(RcloneBinaryName))
-  }
+  command.unshift(rcloneExecutable())
 
   if (appendAutoConfirm) {
     command.push('--auto-confirm')
   }
-  const verb = command.find((part) => ['mount', 'serve', 'sync', 'copy', 'move', 'ncdu'].includes(part))
-  if (verb) {
+  if (appendPerformance) {
     appendPerformanceFlags(command)
   }
 
   return command
+}
+
+function rcloneExecutable(): string {
+  if (useBundledRclone()) {
+    prepareBundledRcloneBinary()
+    return activeBundledBinary
+  }
+  return resolveOnPath(RcloneBinaryName)
 }
 
 /**
@@ -1070,8 +1073,11 @@ async function obscurePasswordFields(fields: { set: Record<string, string>; obsc
   for (const key of fields.obscure) {
     const plain = fields.set[key]
     let obscured = ''
+    if (/[\r\n\0]/.test(plain)) {
+      throw new Error(`Could not store ${key}. rclone config cannot hold a password with a line break.`)
+    }
     try {
-      obscured = (await doCommand(['obscure', '--', plain])).trim()
+      obscured = await obscureSecret(rcloneExecutable(), plain)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       throw new Error(`Could not store ${key}. ${message}`)
