@@ -12,21 +12,21 @@ import { assertBookmarkName, assertExistingRemoteName, assertProviderName, asser
 
 // Error handler
 
-function getFocusedWindow(): BrowserWindow | undefined {
-  return BrowserWindow.getFocusedWindow() || undefined
+function windowFromSender(sender: Electron.WebContents): BrowserWindow | undefined {
+  return BrowserWindow.fromWebContents(sender) || undefined
 }
 
-function showMessageBox(options: Electron.MessageBoxOptions): Promise<Electron.MessageBoxReturnValue> {
-  const focusedWindow = getFocusedWindow()
-  return focusedWindow
-    ? dialog.showMessageBox(focusedWindow, options)
+function showMessageBox(sender: Electron.WebContents | undefined, options: Electron.MessageBoxOptions): Promise<Electron.MessageBoxReturnValue> {
+  const owner = sender ? windowFromSender(sender) : undefined
+  return owner
+    ? dialog.showMessageBox(owner, options)
     : dialog.showMessageBox(options)
 }
 
-function showOpenDialog(options: Electron.OpenDialogOptions): Promise<Electron.OpenDialogReturnValue> {
-  const focusedWindow = getFocusedWindow()
-  return focusedWindow
-    ? dialog.showOpenDialog(focusedWindow, options)
+function showOpenDialog(sender: Electron.WebContents | undefined, options: Electron.OpenDialogOptions): Promise<Electron.OpenDialogReturnValue> {
+  const owner = sender ? windowFromSender(sender) : undefined
+  return owner
+    ? dialog.showOpenDialog(owner, options)
     : dialog.showOpenDialog(options)
 }
 
@@ -82,7 +82,8 @@ ipcMain.on('get-provider-data', (event: IpcMainEvent, providerName: string) => {
   }
 })
 
-ipcMain.handle('get-provider-data', (_event: IpcMainInvokeEvent, providerName: string) => {
+ipcMain.handle('get-provider-data', async (_event: IpcMainInvokeEvent, providerName: string) => {
+  await rclone.getProviders()
   return rclone.getProvider(assertProviderName(providerName))
 })
 
@@ -111,14 +112,14 @@ ipcMain.handle('is-autostart', async () => {
   return loginSettings.openAtLogin
 })
 
-ipcMain.handle('get-props', async () => {
-  const window = BrowserWindow.getFocusedWindow() as DialogWindow | null
+ipcMain.handle('get-props', async (event: IpcMainInvokeEvent) => {
+  const window = windowFromSender(event.sender) as DialogWindow | undefined
   return window?.$props || {}
 })
 
-ipcMain.on('popup-context-menu', (_event: IpcMainEvent, menuTemplate: Electron.MenuItemConstructorOptions[]) => {
+ipcMain.on('popup-context-menu', (event: IpcMainEvent, menuTemplate: Electron.MenuItemConstructorOptions[]) => {
   const menu = Menu.buildFromTemplate(menuTemplate)
-  menu.popup({ window: BrowserWindow.getFocusedWindow() || undefined })
+  menu.popup({ window: windowFromSender(event.sender) })
 })
 
 ipcMain.handle('show-select-menu', async (event: IpcMainInvokeEvent, payload: { items?: Array<{ label: string; value: string }> }) => {
@@ -142,16 +143,16 @@ ipcMain.handle('show-select-menu', async (event: IpcMainInvokeEvent, payload: { 
   })
 })
 
-ipcMain.handle('show-message-box', async (_event: IpcMainInvokeEvent, { message }: { message: string }) => {
-  const response = await showMessageBox({
+ipcMain.handle('show-message-box', async (event: IpcMainInvokeEvent, { message }: { message: string }) => {
+  const response = await showMessageBox(event.sender, {
     message,
     buttons: ['OK']
   })
   return response.response
 })
 
-ipcMain.handle('confirm-dialog', async (_event: IpcMainInvokeEvent, { message }: { message: string }) => {
-  const response = await showMessageBox({
+ipcMain.handle('confirm-dialog', async (event: IpcMainInvokeEvent, { message }: { message: string }) => {
+  const response = await showMessageBox(event.sender, {
     type: 'question',
     buttons: ['Cancel', 'Confirm'],
     defaultId: 0,
@@ -169,8 +170,8 @@ ipcMain.on('show-notification', (_event: IpcMainEvent, { message }: { message: s
   new Notification({ title: 'Notification', body: message.toString() }).show()
 })
 
-ipcMain.on('resize-window', (_event: IpcMainEvent, newHeight: number) => {
-  const window = BrowserWindow.getFocusedWindow()
+ipcMain.on('resize-window', (event: IpcMainEvent, newHeight: number) => {
+  const window = windowFromSender(event.sender)
   if (!window) return
 
   const [width] = window.getSize()
@@ -181,8 +182,8 @@ ipcMain.on('resize-window', (_event: IpcMainEvent, newHeight: number) => {
   }
 })
 
-ipcMain.handle('select-directory', async (_event: IpcMainInvokeEvent, { defaultDirectory }: { defaultDirectory?: string }) => {
-  const result = await showOpenDialog({
+ipcMain.handle('select-directory', async (event: IpcMainInvokeEvent, { defaultDirectory }: { defaultDirectory?: string }) => {
+  const result = await showOpenDialog(event.sender, {
     title: 'Select Directory',
     defaultPath: defaultDirectory || app.getPath('home'),
     properties: ['openDirectory', 'createDirectory']
@@ -195,8 +196,8 @@ ipcMain.handle('select-directory', async (_event: IpcMainInvokeEvent, { defaultD
   }
 })
 
-ipcMain.handle('select-file', async (_event: IpcMainInvokeEvent, defaultFile?: string) => {
-  const { filePaths } = await showOpenDialog({
+ipcMain.handle('select-file', async (event: IpcMainInvokeEvent, defaultFile?: string) => {
+  const { filePaths } = await showOpenDialog(event.sender, {
     title: 'Select File',
     defaultPath: defaultFile || app.getPath('home'),
     properties: ['openFile', 'showHiddenFiles']

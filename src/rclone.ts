@@ -2,6 +2,7 @@
 
 import { execFile, execFileSync, spawn, spawnSync, ChildProcess } from 'child_process'
 import { StringDecoder } from 'string_decoder'
+import * as net from 'net'
 import * as os from 'os'
 import * as path from 'path'
 import * as fs from 'fs'
@@ -23,6 +24,7 @@ import {
   isOptionHidden,
   isProviderOptionActive,
   providerDocsUrl,
+  providerNeedsOAuth,
   remotePathSpec,
   selectConfigFields
 } from './rclone/provider-fields'
@@ -85,6 +87,21 @@ const RcloneBinaryBundled: string = process.env.RCLONETRAY_RCLONE_PATH
     : path.join(app.getAppPath(), 'rclone', process.platform, RcloneBinaryArch, RcloneBinaryName)
 
 let bundledRclonePrepared = false
+let sessionUseBundled: boolean | null = null
+let activeBundledBinary = RcloneBinaryBundled
+
+function useBundledRclone(): boolean {
+  if (sessionUseBundled === null) {
+    sessionUseBundled = settings.get('rclone_use_bundled')
+  }
+  return sessionUseBundled
+}
+
+export function useSystemRclone(): void {
+  settings.set('rclone_use_bundled', false)
+  sessionUseBundled = false
+  bundledRclonePrepared = false
+}
 
 /**
  * System's temp directory
@@ -127,9 +144,9 @@ function prepareRcloneCommand(command: string[]): string[] {
   }
   command.unshift('--ask-password=false')
 
-  if (settings.get('rclone_use_bundled')) {
+  if (useBundledRclone()) {
     prepareBundledRcloneBinary()
-    command.unshift(RcloneBinaryBundled)
+    command.unshift(activeBundledBinary)
   } else {
     command.unshift(resolveOnPath(RcloneBinaryName))
   }
@@ -165,6 +182,36 @@ function resolveOnPath(fileName: string): string {
   return fileName
 }
 
+function ensureExecutableCopy(binaryPath: string): string {
+  const canRun = (target: string): boolean => {
+    try {
+      fs.accessSync(target, fs.constants.X_OK)
+      return true
+    } catch {
+      return false
+    }
+  }
+  if (!canRun(binaryPath)) {
+    try {
+      fs.chmodSync(binaryPath, 0o755)
+    } catch {
+      // Read-only install (.deb, AppImage, DMG). Copy below.
+    }
+  }
+  if (canRun(binaryPath)) {
+    return binaryPath
+  }
+  const dest = path.join(app.getPath('userData'), 'bin', RcloneBinaryName)
+  fs.mkdirSync(path.dirname(dest), { recursive: true })
+  fs.copyFileSync(binaryPath, dest)
+  try {
+    fs.chmodSync(dest, 0o755)
+  } catch {
+    // The copy is in a user-writable directory; launch will report a real error.
+  }
+  return dest
+}
+
 function prepareBundledRcloneBinary(): void {
   if (bundledRclonePrepared) {
     return
@@ -175,12 +222,12 @@ function prepareBundledRcloneBinary(): void {
   }
 
   if (process.platform !== 'win32') {
-    fs.chmodSync(RcloneBinaryBundled, 0o755)
+    activeBundledBinary = ensureExecutableCopy(RcloneBinaryBundled)
   }
 
   if (process.platform === 'darwin') {
     try {
-      execFileSync('/usr/bin/xattr', ['-dr', 'com.apple.quarantine', path.dirname(RcloneBinaryBundled)], {
+      execFileSync('/usr/bin/xattr', ['-dr', 'com.apple.quarantine', path.dirname(activeBundledBinary)], {
         stdio: 'ignore'
       })
     } catch {
@@ -323,6 +370,7 @@ class BookmarkProcessManager {
   private decoder = new StringDecoder('utf8')
   private pendingLine = ''
   private mountTimer: ReturnType<typeof setTimeout> | null = null
+  private childEnv: NodeJS.ProcessEnv | null = null
 
   constructor(processName: string, bookmarkName: string) {
     this.id = `${bookmarkName}:${processName}`
@@ -356,7 +404,8 @@ class BookmarkProcessManager {
   /**
    * Create new monitored process
    */
-  create(command: string[]): void {
+  create(command: string[], env?: NodeJS.ProcessEnv): void {
+    this.childEnv = env || null
     if (!command || command.length < 1) {
       throw new Error('Broken Rclone command')
     }
@@ -374,7 +423,8 @@ class BookmarkProcessManager {
 
     const child = spawn(cmd[0], cmd.slice(1), {
       windowsHide: true,
-      stdio: ['ignore', 'ignore', 'pipe']
+      stdio: ['ignore', 'ignore', 'pipe'],
+      env: this.childEnv || process.env
     })
     BookmarkProcessRegistry[id] = {
       bookmarkName: this.bookmarkName,
@@ -926,6 +976,9 @@ export async function addBookmark(type: string, bookmarkName: string, values: Re
     wrote = true
     await updateBookmarksCache()
     dialogs.notification(`Bookmark ${bookmarkName} is created`)
+    if (providerNeedsOAuth(providerObject.Options)) {
+      reconnectRemote(bookmarkName)
+    }
   } catch (err) {
     if (wrote) {
       try {
@@ -1048,7 +1101,7 @@ export function buildMountArgs(remoteWithRoot: string, mountpoint: string, volna
  * Includes cache and authentication flags based on current settings.
  * Extracted as a pure-ish function for testability.
  */
-export function buildServeCommand(protocol: ServeProtocol, remoteWithRoot: string): string[] {
+export function buildServeCommand(protocol: ServeProtocol, remoteWithRoot: string, addr?: string): string[] {
   const command = [
     'serve',
     protocol,
@@ -1056,24 +1109,29 @@ export function buildServeCommand(protocol: ServeProtocol, remoteWithRoot: strin
     '-vv'
   ]
 
+  if (addr) {
+    command.push('--addr', addr)
+  }
+
   if (protocol !== 'restic') {
-    if (protocol !== 'webdav') {
-      command.push('--attr-timeout', Math.max(1, parseInt(String(settings.get('rclone_cache_files')))) + 's')
-    }
     command.push('--dir-cache-time', Math.max(1, parseInt(String(settings.get('rclone_cache_directories')))) + 's')
   }
 
-  const servingUsername = settings.get('rclone_serving_username')
-  const servingPassword = settings.get('rclone_serving_password')
-
-  if (servingUsername) {
-    command.push('--user', servingUsername)
-  }
-  if (servingPassword) {
-    command.push('--pass', servingPassword)
-  }
-
   return command
+}
+
+/**
+ * Credentials go in the environment so they are not in argv or the startup line.
+ * A password without a username is rejected: rclone ignores it for HTTP, WebDAV and Restic.
+ */
+export function serveAuthEnv(username: string, password: string): { RCLONE_USER: string; RCLONE_PASS: string } | null {
+  if (password && !username) {
+    throw new Error('Set a serving username as well as a password. A password alone leaves the server open.')
+  }
+  if (!username && !password) {
+    return null
+  }
+  return { RCLONE_USER: username, RCLONE_PASS: password }
 }
 
 /**
@@ -1372,6 +1430,24 @@ export function getAvailableServeProtocols(): ServeProtocols {
 /**
  * Start serving protocol+bookmark
  */
+function allocateLocalPort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer()
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address()
+      const port = typeof address === 'object' && address ? address.port : 0
+      server.close((closeError) => {
+        if (closeError || !port) {
+          reject(closeError || new Error('Could not allocate a port'))
+          return
+        }
+        resolve(port)
+      })
+    })
+  })
+}
+
 export function serveStart(protocol: ServeProtocol, bookmark: Bookmark | string): void {
   if (!Object.prototype.hasOwnProperty.call(getAvailableServeProtocols(), protocol)) {
     throw new Error(`Protocol "${protocol}" is not supported`)
@@ -1384,11 +1460,22 @@ export function serveStart(protocol: ServeProtocol, bookmark: Bookmark | string)
     throw new Error(`${bm.$name} is already serving.`)
   }
 
-  const command = buildServeCommand(protocol, getBookmarkRemoteWithRoot(bm))
-
-  proc.create(command)
-  proc.set('protocol', protocol)
-  fireRcloneUpdateActions()
+  const auth = serveAuthEnv(
+    String(settings.get('rclone_serving_username') || ''),
+    String(settings.get('rclone_serving_password') || '')
+  )
+  void allocateLocalPort().then((port) => {
+    if (proc.exists()) {
+      return
+    }
+    const command = buildServeCommand(protocol, getBookmarkRemoteWithRoot(bm), `127.0.0.1:${port}`)
+    proc.create(command, auth ? { ...process.env, ...auth } : undefined)
+    proc.set('protocol', protocol)
+    fireRcloneUpdateActions()
+  }).catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error)
+    dialogs.notification(`Could not start ${protocol} for ${bm.$name}: ${message}`)
+  })
 }
 
 /**
@@ -1454,7 +1541,32 @@ export function getConfig(): Promise<BookmarksCache> {
 /**
  * Init Rclone
  */
+export function bookmarkNeedsReconnect(bookmark: Bookmark): boolean {
+  try {
+    return providerNeedsOAuth(getProvider(bookmark.type).Options) && !bookmark.token
+  } catch {
+    return false
+  }
+}
+
+export function reconnectRemote(bookmarkName: string): void {
+  const command = prepareRcloneCommand(['config', 'reconnect', `${bookmarkName}:`])
+  dialogs.notification(`Finish sign-in for ${bookmarkName} in the window that opened.`)
+  if (process.platform === 'win32') {
+    const cmdExe = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe')
+    const script = formatTerminalCommand(command)
+    spawn(cmdExe, ['/d', '/s', '/c', 'start', 'rclone sign-in', 'cmd', '/k', script], {
+      detached: true,
+      windowsHide: true,
+      stdio: 'ignore'
+    }).unref()
+    return
+  }
+  doCommandInTerminal(command)
+}
+
 export function init(): void {
+  sessionUseBundled = settings.get('rclone_use_bundled')
   if (process.platform === 'linux' || process.platform === 'darwin') {
     process.env.PATH += ':' + path.join('/', 'usr', 'local', 'bin')
   }
@@ -1463,7 +1575,9 @@ export function init(): void {
     updateVersionCache()
   } catch (err) {
     const choice = dialogs.missingRclone(err)
-    if (choice !== 1) {
+    if (choice === 3) {
+      useSystemRclone()
+    } else if (choice !== 1) {
       return
     }
     bundledRclonePrepared = false

@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- HTTP and FTP serving no longer pass the mount-only `--attr-timeout` flag. Each server binds its own free port. A serving password requires a username and is passed in the environment, not on the command line.
+- Edit and the other dialogs read their own window, not whichever window happens to be focused. Provider details are loaded before the form renders.
+- The bundled rclone helper is not chmod'd when it is already executable, and a read-only install is copied into the user data directory. The failure dialog can switch to the system rclone. The "Use bundled" preference applies on the next launch.
+- Google Drive, Dropbox and the other OAuth providers open rclone's sign-in after the remote is created, and the tray offers Reconnect while the token is missing.
 - Transfers are no longer killed because a log line contains "Failed to" or "Error while", and "finished" is reported only when rclone exits 0. Mount is reported only after the mount attempt survives, not on the debug line that precedes it. Serve URLs are read out of the brackets current rclone prints.
 - Custom arguments are split with quotes, and `--daemon`, log-file and mount-only flags are not applied to every command. Long-running rclone processes hide their console window on Windows and do not keep stdin or stdout open.
 - Quitting with active jobs asks asynchronously, then waits for those jobs to exit. An unexpected error offers Continue first, and Quit stops the rclone children.

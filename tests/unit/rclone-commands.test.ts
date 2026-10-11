@@ -69,6 +69,7 @@ import {
   buildMountArgs,
   enquoteCommand,
   isProviderOptionActive,
+  serveAuthEnv,
   shouldAppendAutoConfirm
 } from '../../src/rclone'
 
@@ -119,51 +120,33 @@ describe('buildServeCommand', () => {
     mockSettings.rclone_cache_directories = 10
   })
 
-  it('builds a basic http serve command with cache flags', () => {
-    const cmd = buildServeCommand('http', 'myremote:/')
-    expect(cmd.slice(0, 4)).toEqual(['serve', 'http', 'myremote:/', '-vv'])
-    expect(cmd).toContain('--attr-timeout')
+  it('builds an http serve command without the mount-only attr-timeout flag', () => {
+    const cmd = buildServeCommand('http', 'myremote:', '127.0.0.1:1234')
+    expect(cmd.slice(0, 4)).toEqual(['serve', 'http', 'myremote:', '-vv'])
+    expect(cmd).not.toContain('--attr-timeout')
     expect(cmd).toContain('--dir-cache-time')
+    expect(cmd).toContain('--addr')
+    expect(cmd[cmd.indexOf('--addr') + 1]).toBe('127.0.0.1:1234')
   })
 
-  it('adds --user when a username is set', () => {
-    mockSettings.rclone_serving_username = 'alice'
-    const cmd = buildServeCommand('http', 'r:/')
-    const idx = cmd.indexOf('--user')
-    expect(idx).toBeGreaterThan(-1)
-    expect(cmd[idx + 1]).toBe('alice')
-  })
-
-  it('adds --pass when a password is set', () => {
-    mockSettings.rclone_serving_password = 's3cret'
-    const cmd = buildServeCommand('ftp', 'r:/')
-    const idx = cmd.indexOf('--pass')
-    expect(idx).toBeGreaterThan(-1)
-    expect(cmd[idx + 1]).toBe('s3cret')
-  })
-
-  it('adds both --user and --pass when both are set', () => {
-    mockSettings.rclone_serving_username = 'alice'
-    mockSettings.rclone_serving_password = 's3cret'
-    const cmd = buildServeCommand('webdav', 'r:/')
-    expect(cmd).toContain('--user')
-    expect(cmd).toContain('--pass')
-  })
-
-  it('omits auth flags when neither username nor password is set', () => {
-    const cmd = buildServeCommand('http', 'r:/')
+  it('keeps the password out of the command line and requires a username', () => {
+    expect(serveAuthEnv('', '')).toBeNull()
+    expect(serveAuthEnv('alice', 's3cret')).toEqual({ RCLONE_USER: 'alice', RCLONE_PASS: 's3cret' })
+    expect(() => serveAuthEnv('', 's3cret')).toThrow(/username/)
+    const cmd = buildServeCommand('ftp', 'r:', '127.0.0.1:2121')
     expect(cmd).not.toContain('--user')
     expect(cmd).not.toContain('--pass')
+    expect(cmd).not.toContain('--attr-timeout')
   })
 
-  it('does not add cache flags for restic', () => {
-    const cmd = buildServeCommand('restic', 'r:/')
+  it('does not add directory cache flags for restic', () => {
+    const cmd = buildServeCommand('restic', 'r:')
     expect(cmd).not.toContain('--attr-timeout')
     expect(cmd).not.toContain('--dir-cache-time')
   })
 
-  it('omits --attr-timeout for webdav but keeps --dir-cache-time', () => {
-    const cmd = buildServeCommand('webdav', 'r:/')
+  it('keeps directory cache for webdav and omits attr-timeout', () => {
+    const cmd = buildServeCommand('webdav', 'r:')
     expect(cmd).not.toContain('--attr-timeout')
     expect(cmd).toContain('--dir-cache-time')
   })

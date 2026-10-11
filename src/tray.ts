@@ -47,6 +47,7 @@ type BookmarkAction =
   | 'open-ncdu'
   | 'open-web-browser' 
   | 'open-config' 
+  | 'reconnect'
   | 'delete-bookmark'
 
 /**
@@ -108,6 +109,9 @@ function bookmarkActionRouterBody(this: Bookmark | null, action: BookmarkAction,
       break
     case 'open-config':
       shell.openPath(rclone.getConfigFile())
+      break
+    case 'reconnect':
+      if (this) rclone.reconnectRemote(this.$name)
       break
     case 'delete-bookmark':
       if (this) {
@@ -307,6 +311,13 @@ function generateBookmarkActionsSubmenu(bookmark: Bookmark): BookmarkMenuResult 
 
   // Set the menu item state if there is any kind of connection or current running process.
   const isConnected = !!(isMounted || isDownload || isUpload || isServing || isAutomaticUpload)
+
+  if (rclone.bookmarkNeedsReconnect(bookmark)) {
+    submenu.push({
+      label: 'Reconnect (sign in)',
+      click: () => bookmarkActionRouter.call(bookmark, 'reconnect')
+    })
+  }
 
   // Bookmark controls.
   submenu.push(

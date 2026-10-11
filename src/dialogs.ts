@@ -307,9 +307,13 @@ export function missingRclone(detail?: Error | unknown, usingBundled = settings.
     ? 'RcloneTray could not start the bundled Rclone helper. On macOS this can happen when Gatekeeper quarantines helper binaries inside an unsigned app.\n\nRcloneTray will try to repair the bundled helper automatically. If this keeps happening, remove the quarantine attribute from RcloneTray.app or install Rclone system-wide.'
     : 'Seems that Rclone is not installed (or cannot be found) on your system.\n\nYou need to install Rclone to your system or switch to the bundled version of Rclone.'
 
+  const buttons = ['Go Rclone Website', usingBundled ? 'Keep bundled version' : 'Switch to bundled version', 'Quit']
+  if (usingBundled) {
+    buttons.push('Use system rclone')
+  }
   const choice = dialog.showMessageBoxSync({
     type: 'warning',
-    buttons: ['Go Rclone Website', usingBundled ? 'Keep bundled version' : 'Switch to bundled version', 'Quit'],
+    buttons,
     title: 'Error',
     message: `${helpMessage}${detailMessage}`
   })
@@ -319,6 +323,8 @@ export function missingRclone(detail?: Error | unknown, usingBundled = settings.
     app.exit()
   } else if (choice === 1) {
     settings.set('rclone_use_bundled', true)
+  } else if (choice === 3) {
+    settings.set('rclone_use_bundled', false)
   } else {
     app.exit()
   }
