@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-10-11
+
+A large correctness release. The biggest fixes protect `rclone.conf`: adding or
+editing a remote could break that remote and silently damage others.
+
+### Fixed — your rclone config
+- Adding or editing a remote no longer rewrites the whole `rclone.conf`. Only that
+  remote's section changes; every other remote stays byte-for-byte, including
+  values with `;`, `#`, `=`, OAuth token JSON, UNC paths, non-UTF-8 bytes,
+  comments, indented or duplicated sections, and files without a final newline.
+- Only the fields you change are written. Defaults are no longer copied into the
+  config in the wrong units (S3 `chunk_size` became 5 GiB) or as the text
+  `[object Object]` (12 S3 options). Size, duration and list options show
+  rclone's own values, and on/off/unset options are a three-way choice.
+- Passwords are obscured through rclone's stdin, so any password works
+  (including `-` or one starting with `-`) and never appears in an error message.
+  Blank password fields are not stored; clearing one removes it.
+- An encrypted `rclone.conf` is detected and left read-only.
+- Config changes are serialised, a failed add removes only what it created, a
+  timestamped backup is kept (the three newest), and Windows retries a busy file.
+- Remote names follow rclone's rules; existing remotes with dots, spaces or long
+  names can be edited and deleted. Bucket backends (S3, B2, Swift, GCS, Azure
+  Blob, Oracle, QingStor, Storj) need a bucket or path before Upload/Download;
+  other remotes use their own root instead of the filesystem root.
+
+### Fixed — transfers, mounts and servers
+- Transfers are no longer killed because a log line or a file name contains
+  "Failed to", and success is decided by rclone's exit code. Failures notify
+  with rclone's last error.
+- Upload/Download previews run in the background, count exactly on large
+  trees, appear in Activity and can be stopped there.
+- Mounts are reported ready when rclone's filesystem is up and name the drive.
+  Windows mounts start one at a time, so they never share a drive letter.
+- HTTP and FTP serving start again (a mount-only flag made rclone exit). Each
+  server gets its own free port, the URL opens correctly, a password requires a
+  username, credentials stay out of the command line and the logs.
+- Automatic upload: changes made during an upload are kept, constant writes
+  cannot postpone it forever, Stop sticks, a missing folder is refused, it is
+  restored and catches up at the next launch, and `.DS_Store`/`Thumbs.db` are
+  ignored.
+- Quit stops running work, waits for it, never asks twice and never holds up a
+  logout or shutdown. Restart relaunches once.
+
+### Fixed — app and dialogs
+- Add, Edit and Preferences close after Save again, and ask before discarding
+  unsaved edits. A folder chosen with Browse is saved.
+- Errors from tray actions show as a normal message instead of "Unexpected
+  runtime error".
+- Edit opens with the right remote's data. Console Browser and OAuth Reconnect
+  work on Windows. The welcome message shows once. The update check compares
+  versions correctly.
+- Dialogs have a Content-Security-Policy and cannot navigate away. Tabs are
+  readable and keyboard reachable in light and dark mode. Windows and Linux show
+  a distinct tray icon while something is connected.
+
+### Added
+- Activity: live progress, Stop, Clear finished, Copy log, readable log lines.
+- Preferences: theme (system/light/dark), notification level, update check,
+  bandwidth, transfers, checkers, max deletes, backup directory, read-only
+  serving, Windows network mode. Per-remote mount options and mount at launch.
+  Test connection in Edit. OAuth remotes (Google Drive, Dropbox, OneDrive and
+  others) open rclone's sign-in after you create them, and the tray offers
+  Reconnect while a token is missing.
+- Mount driver check (WinFsp, macFUSE/FUSE-T, fusermount) with an install link.
+
+### Changed
+- Electron 44, electron-builder 26, chokidar 4, ESLint 9, Vitest 3; Node 22.12+
+  for development.
+- Bundled rclone v1.74.4. Every rclone download (npm install, CI and release)
+  is verified against rclone's SHA256SUMS, and installers ship only the target
+  architecture. Releases are published as drafts first.
+- 32-bit Windows (ia32) installers are no longer built: Electron 44 does not
+  support 32-bit Windows.
+- The AppImage no longer turns off the Chromium sandbox. If it does not start on
+  Ubuntu 23.10+, use the `.deb` or see Getting Started.
+
 ## [1.7.0] - 2026-07-16
 
 ### Added

@@ -1,8 +1,7 @@
 'use strict'
 
 import * as path from 'path'
-import { Tray, Menu, shell, MenuItemConstructorOptions } from 'electron'
-import isDev from 'electron-is-dev'
+import { app, Tray, Menu, clipboard, shell, MenuItemConstructorOptions } from 'electron'
 import * as settings from './settings'
 import * as rclone from './rclone'
 import * as dialogs from './dialogs'
@@ -47,61 +46,80 @@ type BookmarkAction =
   | 'open-ncdu'
   | 'open-web-browser' 
   | 'open-config' 
+  | 'reconnect'
   | 'delete-bookmark'
 
 /**
  * Do action with bookmark
  */
+function reportActionError(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error)
+  dialogs.notification(message, 'error')
+}
+
 function bookmarkActionRouter(this: Bookmark | null, action: BookmarkAction, ...args: unknown[]): void {
+  try {
+    const result = bookmarkActionRouterBody.call(this, action, ...args)
+    if (result && typeof (result as Promise<unknown>).then === 'function') {
+      void (result as Promise<unknown>).catch(reportActionError)
+    }
+  } catch (error) {
+    reportActionError(error)
+  }
+}
+
+function bookmarkActionRouterBody(this: Bookmark | null, action: BookmarkAction, ...args: unknown[]): unknown {
   switch (action) {
     case 'mount':
-      if (this) rclone.mount(this)
+      if (this) return rclone.mount(this)
       break
     case 'unmount':
-      if (this) rclone.unmount(this)
+      if (this) return rclone.unmount(this)
       break
     case 'open-mounted':
-      if (this) rclone.openMountPoint(this)
+      if (this) return rclone.openMountPoint(this)
       break
     case 'download':
-      if (this) rclone.download(this)
+      if (this) return rclone.download(this)
       break
     case 'stop-downloading':
-      if (this) rclone.stopDownload(this)
+      if (this) return rclone.stopDownload(this)
       break
     case 'upload':
-      if (this) rclone.upload(this)
+      if (this) return rclone.upload(this)
       break
     case 'stop-uploading':
-      if (this) rclone.stopUpload(this)
+      if (this) return rclone.stopUpload(this)
       break
     case 'toggle-automatic-upload':
-      if (this) rclone.toggleAutomaticUpload(this)
+      if (this) return rclone.toggleAutomaticUpload(this)
       break
     case 'open-local':
-      if (this) rclone.openLocal(this)
+      if (this) return rclone.openLocal(this)
       break
     case 'serve-start':
-      if (this) rclone.serveStart(args[0] as ServeProtocol, this)
+      if (this) return rclone.serveStart(args[0] as ServeProtocol, this)
       break
     case 'serve-stop':
-      if (this) rclone.serveStop(args[0] as ServeProtocol, this)
+      if (this) return rclone.serveStop(args[0] as ServeProtocol, this)
       break
     case 'open-ncdu':
-      if (this) rclone.openNCDU(this)
+      if (this) return rclone.openNCDU(this)
       break
     case 'open-web-browser':
-      rclone.openExternalUrl(args[0] as string)
-      break
+      return rclone.openExternalUrl(args[0] as string)
     case 'open-config':
-      shell.openPath(rclone.getConfigFile())
+      return shell.openPath(rclone.getConfigFile())
+    case 'reconnect':
+      if (this) return rclone.reconnectRemote(this.$name)
       break
     case 'delete-bookmark':
-      if (this) rclone.deleteBookmark(this.$name)
+      if (this) return rclone.deleteBookmark(this.$name)
       break
     default:
       console.error('No such action', action, args, this)
   }
+  return undefined
 }
 
 interface BookmarkMenuResult {
@@ -145,11 +163,13 @@ function generateBookmarkActionsSubmenu(bookmark: Bookmark): BookmarkMenuResult 
 
   // Mount
   const isMounted = rclone.getMountStatus(bookmark)
+  const mountReady = typeof isMounted === 'string' && isMounted !== '*' && isMounted !== ''
+  const mountPending = isMounted === false && rclone.isMountPending(bookmark)
   submenu.push({
-    label: 'Mount',
+    label: mountPending ? 'Mount (waiting for another mount)' : 'Mount',
     click: () => bookmarkActionRouter.call(bookmark, 'mount'),
-    checked: !!isMounted,
-    enabled: isMounted === false
+    checked: mountReady,
+    enabled: isMounted === false && !mountPending
   })
 
   if (isMounted !== false) {
@@ -160,7 +180,7 @@ function generateBookmarkActionsSubmenu(bookmark: Bookmark): BookmarkMenuResult 
       },
       {
         label: `Open In ${fileExplorerLabel}`,
-        enabled: !!isMounted,
+        enabled: mountReady,
         click: () => bookmarkActionRouter.call(bookmark, 'open-mounted')
       }
     )
@@ -171,7 +191,8 @@ function generateBookmarkActionsSubmenu(bookmark: Bookmark): BookmarkMenuResult 
   let isUpload = false
   let isAutomaticUpload = false
   
-  if (settings.get('rclone_sync_enable') && bookmark._rclonetray_local_path_map && bookmark._rclonetray_local_path_map.trim()) {
+  const showSync = bookmark.$limited !== '1' && ((settings.get('rclone_sync_enable') && !!bookmark._rclonetray_local_path_map?.trim()) || rclone.isAutomaticUpload(bookmark))
+  if (showSync) {
     isDownload = rclone.isDownload(bookmark)
     isUpload = rclone.isUpload(bookmark)
     isAutomaticUpload = rclone.isAutomaticUpload(bookmark)
@@ -225,36 +246,31 @@ function generateBookmarkActionsSubmenu(bookmark: Bookmark): BookmarkMenuResult 
   // Serving.
   let isServing = false
   const availableServingProtocols = rclone.getAvailableServeProtocols()
-  const protocolKeys = Object.keys(availableServingProtocols) as ServeProtocol[]
-  const availableServingProtocolsLen = protocolKeys.length
+  const protocolNames: Record<ServeProtocol, string> = { http: 'HTTP', ftp: 'FTP', webdav: 'WebDAV', restic: 'Restic' }
+  const protocolKeys = (['http', 'ftp', 'webdav', 'restic'] as ServeProtocol[]).filter((protocol) => {
+    return !!availableServingProtocols[protocol] || rclone.serveStatus(protocol, bookmark) !== false
+  })
 
-  if (availableServingProtocolsLen) {
+  if (protocolKeys.length) {
     submenu.push({
       type: 'separator'
     })
 
-    protocolKeys.forEach((protocol, i) => {
+    protocolKeys.forEach((protocol) => {
       const servingURI = rclone.serveStatus(protocol, bookmark)
-
-      // Add separator before the menu item, only if current serve method is in process.
       if (servingURI !== false) {
         isServing = true
-        if (i > 0) {
-          submenu.push({
-            type: 'separator'
-          })
-        }
       }
-
+      const enabledHere = !!availableServingProtocols[protocol]
       submenu.push({
         type: 'checkbox',
-        label: `Serve ${availableServingProtocols[protocol]}`,
+        label: `Serve ${protocolNames[protocol]}${enabledHere ? '' : ' (still running)'}`,
         click: () => bookmarkActionRouter.call(bookmark, 'serve-start', protocol),
-        enabled: servingURI === false,
+        enabled: servingURI === false && enabledHere,
         checked: !!servingURI
       })
 
-      if (servingURI !== false) {
+      if (servingURI) {
         submenu.push(
           {
             label: 'Stop',
@@ -262,17 +278,13 @@ function generateBookmarkActionsSubmenu(bookmark: Bookmark): BookmarkMenuResult 
           },
           {
             label: `Open "${servingURI}"`,
-            click: () => bookmarkActionRouter.call(bookmark, 'open-web-browser', servingURI),
-            enabled: !!servingURI
+            click: () => bookmarkActionRouter.call(bookmark, 'open-web-browser', servingURI)
+          },
+          {
+            label: 'Copy URL',
+            click: () => clipboard.writeText(servingURI)
           }
         )
-
-        // Add separator after the menu item, only if current serve method is in process.
-        if (i < availableServingProtocolsLen - 1) {
-          submenu.push({
-            type: 'separator'
-          })
-        }
       }
     })
   }
@@ -293,6 +305,13 @@ function generateBookmarkActionsSubmenu(bookmark: Bookmark): BookmarkMenuResult 
   // Set the menu item state if there is any kind of connection or current running process.
   const isConnected = !!(isMounted || isDownload || isUpload || isServing || isAutomaticUpload)
 
+  if (rclone.bookmarkNeedsReconnect(bookmark)) {
+    submenu.push({
+      label: 'Reconnect (sign in)',
+      click: () => bookmarkActionRouter.call(bookmark, 'reconnect')
+    })
+  }
+
   // Bookmark controls.
   submenu.push(
     {
@@ -300,7 +319,7 @@ function generateBookmarkActionsSubmenu(bookmark: Bookmark): BookmarkMenuResult 
     },
     {
       label: 'Edit',
-      enabled: !isConnected,
+      enabled: !isConnected && bookmark.$limited !== '1',
       click: () => dialogs.editBookmark.call(bookmark)
     }
   )
@@ -342,7 +361,7 @@ function refreshTrayMenu(): void {
     return
   }
 
-  if (isDev) {
+  if (!app.isPackaged) {
     console.log('Refresh tray indicator menu')
   }
 
@@ -353,6 +372,11 @@ function refreshTrayMenu(): void {
     label: 'New Remote',
     click: dialogs.addBookmark,
     accelerator: 'CommandOrControl+N'
+  })
+  menuItems.push({
+    label: 'Stop all',
+    enabled: rclone.hasRunningWork(),
+    click: () => rclone.stopAllProcesses()
   })
 
   const bookmarks = rclone.getBookmarks()
@@ -398,6 +422,12 @@ function refreshTrayMenu(): void {
 
   // Set the menu.
   trayIndicator.setContextMenu(Menu.buildFromTemplate(menuItems))
+  const jobs = rclone.getJobStates()
+  const running = jobs.filter((job) => job.status === 'running').length
+  const failed = jobs.find((job) => job.status === 'failed')
+  trayIndicator.setToolTip(failed
+    ? `RcloneTray — last error: ${failed.message || failed.label}`
+    : `RcloneTray — ${running} running`)
 
   // Set icon acording to the status
   if (icons.connected && icons.default) {
@@ -444,6 +474,12 @@ export function init(): void {
   // a failure here should not crash the whole application.
   try {
     trayIndicator = new Tray(icons.default)
+    if (process.platform === 'win32') {
+      trayIndicator.on('click', () => {
+        trayIndicator?.popUpContextMenu()
+      })
+    }
+    refresh()
   } catch (err) {
     console.error('Failed to create tray indicator:', err)
   }

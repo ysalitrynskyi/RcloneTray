@@ -20,6 +20,17 @@ export interface Settings {
   rclone_serving_webdav_enable: boolean
   rclone_serving_username: string
   rclone_serving_password: string
+  rclone_sync_max_delete: number
+  rclone_sync_backup_dir: string
+  rclone_transfers: number
+  rclone_checkers: number
+  rclone_bwlimit: string
+  notification_level: 'all' | 'errors' | 'off'
+  rclone_serve_read_only: boolean
+  rclone_mount_network_mode: boolean
+  theme: 'system' | 'light' | 'dark'
+  check_updates: boolean
+  rclone_autoupload_names: string
 }
 
 export type SettingKey = keyof Settings
@@ -29,13 +40,19 @@ export type SettingValue = Settings[SettingKey]
 export interface ProviderOption {
   Name: string
   Help: string
-  Default?: string | number | boolean
+  Default?: unknown
+  DefaultStr?: string
+  ValueStr?: string
+  Value?: unknown
+  Type?: string
   Required: boolean
   Advanced: boolean
-  Hide: boolean
+  /** rclone sends a bitmask. true is accepted for older callers. */
+  Hide?: boolean | number
   IsPassword?: boolean
+  Sensitive?: boolean
   Provider?: string
-  Examples?: Array<{ Value: string | number; Label?: string }>
+  Examples?: Array<{ Value: string | number; Label?: string; Help?: string; Provider?: string }>
   $Type?: string
   $Label?: string
   $Namespace?: string
@@ -97,13 +114,16 @@ export interface JobState {
   pid?: number
   uri?: string
   message?: string
+  progress?: string
   logTail: string[]
 }
 
 // Automatic upload types
 export interface AutomaticUploadEntry {
-  watcher: import('chokidar').FSWatcher | null
+  watcher: { close: () => void } | null
   timer: NodeJS.Timeout | null
+  dirty: boolean
+  firstEventAt: number | null
 }
 
 export interface AutomaticUploadRegistry {

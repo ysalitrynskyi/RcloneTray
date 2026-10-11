@@ -26,7 +26,18 @@ const DEFAULTS: Settings = {
   rclone_serving_restic_enable: false,
   rclone_serving_webdav_enable: false,
   rclone_serving_username: '',
-  rclone_serving_password: ''
+  rclone_serving_password: '',
+  rclone_sync_max_delete: 0,
+  rclone_sync_backup_dir: '',
+  rclone_transfers: 0,
+  rclone_checkers: 0,
+  rclone_bwlimit: '',
+  notification_level: 'all',
+  rclone_serve_read_only: false,
+  rclone_mount_network_mode: false,
+  theme: 'system',
+  check_updates: true,
+  rclone_autoupload_names: ''
 }
 
 /**
@@ -44,6 +55,11 @@ const settingsFile: string = path.join(settingsDir, 'settings.json')
  * Cache for current settings (starts from defaults).
  */
 const cache: Settings = { ...DEFAULTS }
+let firstRun = false
+
+export function isFirstRun(): boolean {
+  return firstRun
+}
 
 /**
  * Coerce an incoming value to the type of its default, so values coming from the
@@ -103,6 +119,7 @@ export function remove(item: SettingKey): boolean {
  * Merge current settings
  */
 export function merge(newSettings: Partial<Settings>): Promise<void> {
+  const previous: Settings = { ...cache }
   Object.keys(newSettings).forEach(function (key) {
     const k = key as SettingKey
     if (has(k)) {
@@ -110,7 +127,10 @@ export function merge(newSettings: Partial<Settings>): Promise<void> {
       (cache as any)[k] = coerceSettingValue(k, newSettings[k])
     }
   })
-  return updateFile()
+  return updateFile().catch((error: unknown) => {
+    Object.assign(cache, previous)
+    throw error
+  })
 }
 
 /**
@@ -145,7 +165,9 @@ function readFileSyncInit(): void {
       mkdirSync(settingsDir, { recursive: true })
     }
 
-    if (existsSync(settingsFile)) {
+    if (!existsSync(settingsFile)) {
+      firstRun = true
+    } else {
       const content = readFileSync(settingsFile, 'utf-8')
       const parsed = JSON.parse(content) as Partial<Settings>
       Object.keys(parsed).forEach((key) => {

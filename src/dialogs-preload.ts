@@ -14,9 +14,10 @@ interface OptionFieldDefinition {
   Value?: string | number | boolean
   Required?: boolean
   Provider?: string
-  Examples?: Array<{ Value: string | number; Label?: string }>
+  Examples?: Array<{ Value: string | number; Label?: string; Help?: string; Provider?: string }>
   Advanced?: boolean
-  Hide?: boolean
+  Hide?: boolean | number
+  Sensitive?: boolean
 }
 
 interface TabsElement extends HTMLDivElement {
@@ -68,6 +69,98 @@ function setOptionFieldDependencyValue(key: string, value: string): void {
   selectOptionFieldDependencies()
 }
 
+function optionIsHidden(hide: unknown): boolean {
+  if (hide === true) {
+    return true
+  }
+  if (typeof hide === 'number' && Number.isFinite(hide)) {
+    return (hide & 2) !== 0
+  }
+  return false
+}
+
+function parseBoolLoose(value: unknown): boolean {
+  if (value === true) {
+    return true
+  }
+  if (value === false || value === null || value === undefined) {
+    return false
+  }
+  if (typeof value === 'number') {
+    return value !== 0
+  }
+  const text = String(value).trim().toLowerCase()
+  return text === 'true' || text === 'yes' || text === 't' || text === '1' || text === 'on'
+}
+
+function exampleMatchesProvider(providerRule: string | undefined): boolean {
+  if (!providerRule) {
+    return true
+  }
+  const activeValues = Object.values(optionFieldDependencyValues)
+  const invert = providerRule.startsWith('!')
+  const rules = (invert ? providerRule.substring(1) : providerRule).split(',').map((item) => item.trim()).filter(Boolean)
+  const match = rules.some((rule) => activeValues.includes(rule))
+  return invert ? !match : match
+}
+
+interface TrackedFieldLike {
+  type?: string
+  checked?: boolean
+  value: string
+  dataset: Record<string, string | undefined>
+}
+
+function fieldToken(field: TrackedFieldLike): string {
+  return field.type === 'checkbox' ? (field.checked ? '1' : '0') : field.value
+}
+
+function isTrackedFieldChanged(field: TrackedFieldLike): boolean {
+  if (field.dataset.track !== '1') {
+    return false
+  }
+  return field.dataset.cleared === '1' || fieldToken(field) !== field.dataset.initial
+}
+
+function anyTrackedFieldChanged(fields: TrackedFieldLike[]): boolean {
+  return fields.some((field) => isTrackedFieldChanged(field))
+}
+
+function setFieldValueWithEvents(
+  field: { value: string; dispatchEvent: (event: Event) => boolean },
+  value: string,
+  createEvent: (type: string) => Event
+): void {
+  field.value = value
+  field.dispatchEvent(createEvent('input'))
+  field.dispatchEvent(createEvent('change'))
+}
+
+function hasStoredFieldValue(value: unknown): boolean {
+  return value !== undefined && value !== null && String(value) !== ''
+}
+
+function fieldPlaceholder(hasSavedValue: boolean, defaultValue: unknown): string {
+  return hasSavedValue ? 'Leave blank to keep the saved value' : String(defaultValue ?? '')
+}
+
+function trackField(inputField: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): void {
+  inputField.dataset.track = '1'
+  inputField.dataset.initial = fieldToken(inputField)
+}
+
+function trackForm(form: HTMLFormElement): void {
+  Array.from(form.elements).forEach((element) => {
+    const field = element as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+    if (!field.name || field.dataset.track === '1' || ['hidden', 'button', 'submit', 'reset', 'file'].includes(field.type)) {
+      return
+    }
+    trackField(field)
+  })
+}
+
+let markedClean = false
+
 function createHelpTextElement(help: string): HTMLDivElement {
   const fieldHelpText = document.createElement('div')
   const urlPattern = /\b(https?|ftp|file):\/\/[-A-Z0-9+&@#/%?=~_|!:,.]*[-A-Z0-9+&@#/%=~_|]/ig
@@ -100,6 +193,28 @@ function createHelpTextElement(help: string): HTMLDivElement {
   return fieldHelpText
 }
 
+window.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      window.close()
+      return
+    }
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      const form = document.querySelector('form')
+      if (form instanceof HTMLFormElement) {
+        form.requestSubmit()
+      }
+    }
+  })
+  window.addEventListener('beforeunload', (event) => {
+    if (markedClean || !anyTrackedFieldChanged(Array.from(document.querySelectorAll<HTMLInputElement>('[data-track="1"]')))) {
+      return
+    }
+    event.preventDefault()
+    event.returnValue = false
+  })
+})
+
 function resizeToContentWindow(): void {
   let newHeight = document.body.scrollHeight + (window.outerHeight - window.innerHeight)
   if (newHeight > window.screen.height * 0.85) {
@@ -122,6 +237,8 @@ declare global {
       errorBox: (message: string) => void
       notification: (message: string) => void
       resizeToContent: () => void
+      markClean: () => void
+      trackForm: (form: HTMLFormElement) => void
       selectDirectory: (defaultDirectory?: string) => Promise<string | null>
       selectFile: (defaultFile?: string) => Promise<string[]>
       selectFromMenu: (items: Array<{ label: string; value: string }>) => Promise<string | null>
@@ -155,8 +272,11 @@ contextBridge.exposeInMainWorld('$main', {
   settingsMerge: (data: Record<string, unknown>): Promise<void> => ipcRenderer.invoke('settings-merge', data),
   getSetting: (key: string): Promise<unknown> => ipcRenderer.invoke('get-setting', key),
   jobs: {
-    all: (): Promise<unknown[]> => ipcRenderer.invoke('get-job-state')
+    all: (): Promise<unknown[]> => ipcRenderer.invoke('get-job-state'),
+    stop: (id: string): Promise<void> => ipcRenderer.invoke('stop-job', id),
+    clearFinished: (): Promise<unknown[]> => ipcRenderer.invoke('clear-finished-jobs')
   },
+  testConnection: (name: string): Promise<string> => ipcRenderer.invoke('test-remote-connection', name),
   rclone: (() => {
     const invokeIpc = async <T>(channel: string, ...args: unknown[]): Promise<T | undefined> => {
       try {
@@ -206,6 +326,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('show-notification', { message })
   },
   resizeToContent: resizeToContentWindow,
+  markClean: (): void => {
+    markedClean = true
+  },
+  trackForm: (form: HTMLFormElement): void => {
+    trackForm(form)
+  },
   selectDirectory: async (defaultDirectory?: string): Promise<string | null> => {
     return await ipcRenderer.invoke('select-directory', { defaultDirectory })
   },
@@ -220,6 +346,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     Array.from(form.elements).forEach(element => {
       const el = element as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
       if (el.name && !el.disabled && !(el.type === 'radio' && !(el as HTMLInputElement).checked)) {
+        if (el.dataset.track === '1' && !isTrackedFieldChanged(el)) {
+          return
+        }
         const fieldValue = el.type === 'checkbox' ? (el as HTMLInputElement).checked : el.value
         const [namespace, name] = el.name.split('.')
         if (namespace && name) {
@@ -247,7 +376,9 @@ const htmlElementsApi = {
 
     container.addTab = function(label: string, content: DocumentFragment | HTMLElement): void {
       const tabsTabIndex = containerButtons.childNodes.length
-      const button = document.createElement('div')
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.setAttribute('role', 'tab')
       ;(button as unknown as { tabsTabIndex: number }).tabsTabIndex = tabsTabIndex
       button.className = `tab-button${tabsTabIndex > 0 ? '' : ' active'}`
       button.innerText = label
@@ -303,6 +434,7 @@ const htmlElementsApi = {
     optionFieldNamespace?: string, 
     value?: unknown
   ): HTMLDivElement {
+    const hasStoredValue = hasStoredFieldValue(value)
     if (value === undefined || value === null) {
       value = optionFieldDefinition.Value ?? optionFieldDefinition.Default
     }
@@ -332,7 +464,23 @@ const htmlElementsApi = {
       case 'boolean':
         inputField = document.createElement('input')
         inputField.type = 'checkbox'
-        ;(inputField as HTMLInputElement).checked = [true, 'true', 1, '1'].includes(value as string | number | boolean)
+        ;(inputField as HTMLInputElement).checked = parseBoolLoose(value)
+        break
+      case 'tristate':
+        inputField = document.createElement('select')
+        ;[
+          ['unset', 'Unset (default)'],
+          ['true', 'True'],
+          ['false', 'False']
+        ].forEach(([itemValue, label]) => {
+          const option = document.createElement('option')
+          option.value = itemValue
+          option.textContent = label
+          if (String(value || 'unset') === itemValue) {
+            option.selected = true
+          }
+          inputField.appendChild(option)
+        })
         break
       case 'number':
       case 'numeric':
@@ -343,7 +491,10 @@ const htmlElementsApi = {
       case 'password':
         inputField = document.createElement('input')
         inputField.type = 'password'
-        inputField.value = (value as string) || ''
+        inputField.value = ''
+        if (hasStoredValue) {
+          inputField.dataset.saved = '1'
+        }
         break
       case 'directory':
         inputField = document.createElement('input')
@@ -381,7 +532,7 @@ const htmlElementsApi = {
     }
     inputField.id = 'field_' + optionFieldDefinition.Name
     if ('placeholder' in inputField) {
-      inputField.placeholder = String(optionFieldDefinition.Default ?? '')
+      inputField.placeholder = fieldPlaceholder(inputField.dataset.saved === '1', optionFieldDefinition.Default)
     }
 
     td.appendChild(inputField)
@@ -390,6 +541,7 @@ const htmlElementsApi = {
     const browseType = (inputField as HTMLInputElement & { _browseType?: string })._browseType
     if (browseType) {
       const browseButton = document.createElement('button')
+      browseButton.type = 'button'
       browseButton.style.margin = '.3rem 0'
       browseButton.innerText = 'Browse'
       browseButton.addEventListener('click', async (event) => {
@@ -397,12 +549,12 @@ const htmlElementsApi = {
         if (browseType === 'directory') {
           const selectedPath = await ipcRenderer.invoke('select-directory', { defaultDirectory: inputField.value }) as string | null
           if (selectedPath) {
-            inputField.value = selectedPath
+            setFieldValueWithEvents(inputField, selectedPath, (type) => new window.Event(type, { bubbles: true }))
           }
         } else {
           const selectedPaths = await ipcRenderer.invoke('select-file', inputField.value) as string[]
           if (selectedPaths && selectedPaths.length > 0) {
-            inputField.value = selectedPaths[0]
+            setFieldValueWithEvents(inputField, selectedPaths[0], (type) => new window.Event(type, { bubbles: true }))
           }
         }
       })
@@ -416,9 +568,15 @@ const htmlElementsApi = {
       inputField.setAttribute('list', inputFieldOptions.id)
       td.appendChild(inputFieldOptions)
       optionFieldDefinition.Examples.forEach((item) => {
+        if (!exampleMatchesProvider(item.Provider)) {
+          return
+        }
         const datalistOption = document.createElement('option')
         datalistOption.value = String(item.Value)
         datalistOption.innerText = item.Label || String(item.Value)
+        if (item.Provider) {
+          datalistOption.dataset.provider = item.Provider
+        }
         inputFieldOptions.appendChild(datalistOption)
       })
 
@@ -433,17 +591,16 @@ const htmlElementsApi = {
         const menuItems: Array<{ label: string; value: string }> = []
         inputFieldOptions.childNodes.forEach((childNode) => {
           const optionNode = childNode as HTMLOptionElement
-          if (optionNode.value) {
+          if (optionNode.value && exampleMatchesProvider(optionNode.dataset.provider)) {
             menuItems.push({
-              label: optionNode.value,
+              label: optionNode.label || optionNode.value,
               value: optionNode.value
             })
           }
         })
         const selected = await ipcRenderer.invoke('show-select-menu', { items: menuItems }) as string | null
         if (selected) {
-          inputField.value = selected
-          inputField.dispatchEvent(new window.Event('change'))
+          setFieldValueWithEvents(inputField, selected, (type) => new window.Event(type, { bubbles: true }))
         }
       })
     }
@@ -480,6 +637,25 @@ const htmlElementsApi = {
         fieldHelpText.className = 'label-help'
       }
     }
+
+    if (optionFieldDefinition.$Type === 'password' && inputField.dataset.saved === '1') {
+      const clearLabel = document.createElement('label')
+      const clearBox = document.createElement('input')
+      clearBox.type = 'checkbox'
+      clearLabel.appendChild(clearBox)
+      clearLabel.appendChild(document.createTextNode(' Clear saved value'))
+      clearBox.addEventListener('change', () => {
+        if (clearBox.checked) {
+          inputField.value = ''
+          inputField.dataset.cleared = '1'
+        } else {
+          delete inputField.dataset.cleared
+        }
+      })
+      td.appendChild(clearLabel)
+    }
+
+    trackField(inputField)
 
     // Make some fields required.
     if (optionFieldDefinition.Required) {
@@ -554,7 +730,7 @@ contextBridge.exposeInMainWorld('api', {
         }
 
         resetOptionFieldDependencies()
-        const visibleOptions = provider.Options.filter((item) => item.Hide !== true)
+        const visibleOptions = provider.Options.filter((item) => !optionIsHidden(item.Hide))
 
         const connectionFields = visibleOptions.filter((item) => {
           return item.Name !== '_rclonetray_local_path_map' && item.Advanced !== true

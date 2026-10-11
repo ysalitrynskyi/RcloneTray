@@ -1,6 +1,8 @@
 <!doctype html>
 <html>
 <head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; base-uri 'none'; form-action 'none'">
   <title>Preferences</title>
   <link rel="stylesheet" href="../styles/ui.css">
   <style>
@@ -77,7 +79,7 @@
 <body>
   <div id="loading" class="state" style="margin-top: 40px;">Loading preferences... <span class="spinner"></span></div>
   
-  <form id="preferences-form" class="container" style="display: none;">
+  <form id="preferences-form" class="container" style="display: none;" novalidate>
     <nav class="sidebar" role="tablist" aria-label="Settings sections">
       <div class="sidebar-title">Settings</div>
       <div class="sidebar-item active" data-panel="general">
@@ -131,6 +133,15 @@
                 </div>
               </div>
             </div>
+            <div class="form-row">
+              <label class="form-label">Update check</label>
+              <div class="form-control">
+                <div class="checkbox-wrapper">
+                  <input type="checkbox" name="check_updates" id="check_updates">
+                </div>
+                <div class="form-help">Look for a newer GitHub release at startup.</div>
+              </div>
+            </div>
           </div>
 
           <div class="section">
@@ -142,6 +153,26 @@
                   <input type="checkbox" name="tray_menu_show_type" id="tray_menu_show_type">
                   <span class="checkbox-label">Display remote type in tray menu</span>
                 </div>
+              </div>
+            </div>
+            <div class="form-row">
+              <label class="form-label">Theme</label>
+              <div class="form-control">
+                <select name="theme" id="theme">
+                  <option value="system">System</option>
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <label class="form-label">Notifications</label>
+              <div class="form-control">
+                <select name="notification_level" id="notification_level">
+                  <option value="all">All</option>
+                  <option value="errors">Errors only</option>
+                  <option value="off">Off</option>
+                </select>
               </div>
             </div>
           </div>
@@ -204,6 +235,15 @@
                 <div class="form-help">How long folder listings stay cached.</div>
               </div>
             </div>
+            <div class="form-row">
+              <label class="form-label">Network mount</label>
+              <div class="form-control">
+                <div class="checkbox-wrapper">
+                  <input type="checkbox" name="rclone_mount_network_mode" id="rclone_mount_network_mode">
+                </div>
+                <div class="form-help">Windows only. Pass --network-mode to mount.</div>
+              </div>
+            </div>
           </div>
 
           <div class="section">
@@ -211,8 +251,8 @@
             <div class="form-row">
               <label class="form-label">Custom args</label>
               <div class="form-control">
-                <textarea name="custom_args" id="custom_args" placeholder="e.g. --vfs-cache-mode full"></textarea>
-                <div class="form-help">Space or newline separated rclone arguments. Check rclone.org/docs for options.</div>
+                <textarea name="custom_args" id="custom_args" placeholder="e.g. --transfers 8 --fast-list"></textarea>
+                <div class="form-help">Added to every rclone command. Flags a command does not support (for example VFS flags on a sync) are left out. Quote values with spaces. See rclone.org/docs.</div>
               </div>
             </div>
           </div>
@@ -259,6 +299,38 @@
                   <option value="15">15 seconds</option>
                 </select>
                 <div class="form-help">Delay before automatic upload starts after file changes</div>
+              </div>
+            </div>
+            <div class="form-row">
+              <label class="form-label">Max deletes</label>
+              <div class="form-control">
+                <input type="number" name="rclone_sync_max_delete" id="rclone_sync_max_delete" min="0">
+                <div class="form-help">Sync stops if it would delete more than this many files. 0 means no limit.</div>
+              </div>
+            </div>
+            <div class="form-row">
+              <label class="form-label">Backup directory</label>
+              <div class="form-control">
+                <input type="text" name="rclone_sync_backup_dir" id="rclone_sync_backup_dir" placeholder="optional --backup-dir">
+              </div>
+            </div>
+            <div class="form-row">
+              <label class="form-label">Bandwidth</label>
+              <div class="form-control">
+                <input type="text" name="rclone_bwlimit" id="rclone_bwlimit" placeholder="off, or 10M">
+              </div>
+            </div>
+            <div class="form-row">
+              <label class="form-label">Transfers</label>
+              <div class="form-control">
+                <input type="number" name="rclone_transfers" id="rclone_transfers" min="0">
+                <div class="form-help">0 uses rclone's default.</div>
+              </div>
+            </div>
+            <div class="form-row">
+              <label class="form-label">Checkers</label>
+              <div class="form-control">
+                <input type="number" name="rclone_checkers" id="rclone_checkers" min="0">
               </div>
             </div>
           </div>
@@ -325,12 +397,21 @@
                 <div class="form-help">Default password for serving authentication</div>
               </div>
             </div>
+            <div class="form-row">
+              <label class="form-label">Read only</label>
+              <div class="form-control">
+                <div class="checkbox-wrapper">
+                  <input type="checkbox" name="rclone_serve_read_only" id="rclone_serve_read_only">
+                </div>
+                <div class="form-help">HTTP, FTP and WebDAV use --read-only. Restic uses --append-only.</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
       <div class="content-footer">
-        <span class="footer-hint">Changes apply when you save.</span>
+        <span class="footer-hint">Saving applies to the next mount, server, or transfer. Anything already running keeps its current settings until you stop it.</span>
         <button type="button" class="btn btn-secondary" id="btn-cancel">Cancel</button>
         <button type="submit" class="btn btn-primary">Save</button>
       </div>
@@ -392,15 +473,28 @@
         // Populate form fields
         setField('auto_start', 'checked', !!isAutostart);
         setField('tray_menu_show_type', 'checked', trayMenuShowType !== false);
-        setField('rclone_config', 'value', rcloneConfigFile || '');
+        const storedConfig = await $main.getSetting('rclone_config');
+        setField('rclone_config', 'value', storedConfig || '');
+        const configInput = document.getElementById('rclone_config');
+        if (configInput && !storedConfig) configInput.placeholder = rcloneConfigFile || '';
         setField('rclone_use_bundled', 'checked', rcloneUseBundled !== false);
-        setField('rclone_cache_files', 'value', rcloneCacheFiles || 3);
-        setField('rclone_cache_directories', 'value', rcloneCacheDirectories || 10);
+        setField('rclone_cache_files', 'value', rcloneCacheFiles ?? 3);
+        setField('rclone_cache_directories', 'value', rcloneCacheDirectories ?? 10);
         setField('rclone_mount_vfs_cache_mode', 'value', rcloneMountVfsCacheMode || 'writes');
         setField('custom_args', 'value', customArgs || '');
         setField('rclone_ncdu_enable', 'checked', !!rcloneNcduEnable);
         setField('rclone_sync_enable', 'checked', !!rcloneSyncEnable);
-        setField('rclone_sync_autoupload_delay', 'value', rcloneSyncAutouploadDelay || 5);
+        setField('rclone_sync_autoupload_delay', 'value', rcloneSyncAutouploadDelay ?? 5);
+        setField('rclone_sync_max_delete', 'value', await $main.getSetting('rclone_sync_max_delete') ?? 0);
+        setField('rclone_sync_backup_dir', 'value', await $main.getSetting('rclone_sync_backup_dir') || '');
+        setField('rclone_bwlimit', 'value', await $main.getSetting('rclone_bwlimit') || '');
+        setField('rclone_transfers', 'value', await $main.getSetting('rclone_transfers') ?? 0);
+        setField('rclone_checkers', 'value', await $main.getSetting('rclone_checkers') ?? 0);
+        setField('rclone_serve_read_only', 'checked', !!(await $main.getSetting('rclone_serve_read_only')));
+        setField('notification_level', 'value', await $main.getSetting('notification_level') || 'all');
+        setField('theme', 'value', await $main.getSetting('theme') || 'system');
+        setField('check_updates', 'checked', (await $main.getSetting('check_updates')) !== false);
+        setField('rclone_mount_network_mode', 'checked', !!(await $main.getSetting('rclone_mount_network_mode')));
         setField('rclone_serving_http_enable', 'checked', !!rcloneServingHttpEnable);
         setField('rclone_serving_ftp_enable', 'checked', !!rcloneServingFtpEnable);
         setField('rclone_serving_webdav_enable', 'checked', !!rcloneServingWebdavEnable);
@@ -420,8 +514,9 @@
             label.htmlFor = control.id;
           }
           if (control && control.type === 'checkbox') {
-            row.addEventListener('click', (event) => {
-              if (event.target === control || event.target.tagName === 'LABEL') return;
+            const toggleTarget = row.querySelector('.checkbox-wrapper') || control.parentElement;
+            toggleTarget?.addEventListener('click', (event) => {
+              if (event.target === control || event.target.tagName === 'LABEL' || event.target.closest('.form-help')) return;
               control.checked = !control.checked;
               control.dispatchEvent(new Event('change', { bubbles: true }));
             });
@@ -448,21 +543,36 @@
           };
           item.addEventListener('click', activatePanel);
           item.addEventListener('keydown', function(event) {
+            const items = Array.from(document.querySelectorAll('.sidebar-item'));
+            const index = items.indexOf(this);
             if (event.key === 'Enter' || event.key === ' ') {
               event.preventDefault();
               activatePanel.call(this);
+            } else if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+              event.preventDefault();
+              const next = items[(index + 1) % items.length];
+              next.focus();
+              activatePanel.call(next);
+            } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+              event.preventDefault();
+              const next = items[(index - 1 + items.length) % items.length];
+              next.focus();
+              activatePanel.call(next);
             }
           });
         });
 
+        window.electronAPI.trackForm(formEl);
+
         // Cancel button closes the window
-        document.getElementById('btn-cancel')?.addEventListener('click', () => window.close());
+        document.getElementById('btn-cancel')?.addEventListener('click', () => { window.electronAPI.markClean(); window.close(); });
 
         // Browse config file
         document.getElementById('browse-config')?.addEventListener('click', async function() {
           const selected = await window.electronAPI.selectFile();
           if (selected && selected.length > 0) {
             setField('rclone_config', 'value', selected[0]);
+            requiresRestart = true;
           }
         });
 
@@ -502,6 +612,7 @@
             if (requiresRestart) {
               window.htmlElements.checkForRequiredRestart();
             }
+            window.electronAPI.markClean();
             window.close();
           } catch (error) {
             window.electronAPI.errorBox(error.message || String(error));

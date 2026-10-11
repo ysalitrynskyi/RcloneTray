@@ -51,7 +51,7 @@ test.describe('RcloneTray Application launch', () => {
 
     electronApp = await electron.launch({
       // --no-sandbox is required to launch Electron in CI containers / xvfb.
-      args: ['--no-sandbox', MAIN_JS],
+      args: ['--no-sandbox', `--user-data-dir=${path.join(TEST_DATA_DIR, 'userdata')}`, MAIN_JS],
       env: {
         ...process.env,
         RCLONETRAY_TEST: '1',

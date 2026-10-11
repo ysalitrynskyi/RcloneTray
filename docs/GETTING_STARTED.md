@@ -16,7 +16,7 @@ and download the file for your operating system:
 
 | Your computer | Download this |
 |---------------|---------------|
-| **Windows** | `RcloneTray-<version>-x64.exe` (or `-arm64`/`-ia32` for those CPUs) |
+| **Windows** | `RcloneTray-<version>-x64.exe` (or `-arm64` for ARM PCs; 32-bit Windows is not supported) |
 | **macOS** (Intel or Apple Silicon) | `RcloneTray-<version>-x64.dmg` or `-arm64.dmg` |
 | **Linux** | `RcloneTray-<version>-x86_64.AppImage` or the `.deb` package |
 
@@ -62,6 +62,12 @@ chmod +x RcloneTray-*.AppImage
 ./RcloneTray-*.AppImage
 ```
 
+If nothing happens on Ubuntu 23.10 or later and the terminal mentions the
+sandbox (`chrome-sandbox` / `user namespaces`), AppArmor is blocking Chromium's
+sandbox for AppImages. Prefer the `.deb` package, which is not affected. If you
+must use the AppImage, `./RcloneTray-*.AppImage --no-sandbox` starts it without
+the Chromium sandbox (less isolation for the app's windows).
+
 **Debian/Ubuntu (`.deb`):**
 
 ```bash
@@ -79,7 +85,8 @@ sudo dpkg -i RcloneTray-*.deb
 2. Click the tray icon → **New Remote**.
 3. Pick your storage **provider** (e.g. Google Drive, Dropbox, S3).
 4. Fill in the connection details and **Save**. RcloneTray uses the same config
-   as rclone, so existing rclone remotes show up automatically.
+   as rclone and changes only that remote. Existing rclone remotes show up
+   automatically. An encrypted `rclone.conf` is shown as read-only.
 5. Click the remote in the tray menu to **Mount**, **Sync**, or **Serve** it.
 6. Open **Activity** from the tray menu when you want to see running jobs, recent
    logs, or failures.

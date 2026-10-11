@@ -2,6 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; base-uri 'none'; form-action 'none'">
   <title>Edit Bookmark</title>
   <link rel="stylesheet" href="../styles/ui.css">
 </head>
@@ -27,6 +28,7 @@
     </div>
 
     <div class="footer">
+      <button type="button" id="test-btn">Test connection</button>
       <button type="button" class="btn-danger" id="delete-btn">Delete remote</button>
       <button type="submit">Save changes</button>
     </div>
@@ -62,14 +64,30 @@
 
         window.api.renderBookmarkSettings(settingsWrap, props.type, { options: props });
 
+        const saveButton = theForm.querySelector('button[type="submit"]');
         theForm.addEventListener('submit', async function (event) {
           event.preventDefault();
+          if (saveButton) saveButton.disabled = true;
           const data = window.electronAPI.getTheFormData(this);
           try {
             await $main.rclone.updateBookmark(props.$name, data.options || {});
+            window.electronAPI.markClean();
             window.close();
           } catch (error) {
+            if (saveButton) saveButton.disabled = false;
             window.electronAPI.errorBox(error.message || String(error));
+          }
+        });
+
+        document.getElementById('test-btn').addEventListener('click', async function () {
+          this.disabled = true;
+          try {
+            const message = await $main.testConnection(props.$name);
+            window.electronAPI.messageBox(message);
+          } catch (error) {
+            window.electronAPI.errorBox(error.message || String(error));
+          } finally {
+            this.disabled = false;
           }
         });
 
@@ -80,6 +98,7 @@
           if (!confirmed) return;
           try {
             await $main.rclone.delBookmark(props.$name);
+            window.electronAPI.markClean();
             window.close();
           } catch (error) {
             window.electronAPI.errorBox(error.message || String(error));

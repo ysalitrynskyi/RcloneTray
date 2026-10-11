@@ -30,5 +30,11 @@ available it will be released and credited (unless you prefer to remain anonymou
 - Released binaries are **not** code-signed (no Apple Developer ID / Windows EV
   certificate). This is a known, documented trade-off for a free OSS app, not a
   vulnerability.
-- The renderer runs sandboxed with context isolation and no Node integration;
-  the only main↔renderer surface is the preload bridge in `src/dialogs-preload.ts`.
+- The renderer runs sandboxed with context isolation, no Node integration and a
+  strict Content-Security-Policy, and dialogs cannot navigate away; the only
+  main↔renderer surface is the preload bridge in `src/dialogs-preload.ts`.
+- Bundled rclone binaries are verified against rclone's published SHA256SUMS at
+  build time.
+- The optional update check (Preferences → General) sends one request to the
+  GitHub releases API at startup; nothing else leaves your machine except the
+  rclone traffic you start.

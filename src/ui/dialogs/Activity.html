@@ -2,6 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; base-uri 'none'; form-action 'none'">
   <title>Activity</title>
   <link rel="stylesheet" href="../styles/ui.css">
 </head>
@@ -12,7 +13,10 @@
         <h1>Activity</h1>
         <p>Mounts, transfers, servers, and recent rclone output.</p>
       </div>
-      <button type="button" class="btn btn-secondary" id="refresh-btn">Refresh</button>
+      <div>
+        <button type="button" class="btn btn-secondary" id="clear-btn">Clear finished</button>
+        <button type="button" class="btn btn-secondary" id="refresh-btn">Refresh</button>
+      </div>
     </header>
     <section class="activity-list" id="activity-list">
       <div class="state">Loading activity… <span class="spinner"></span></div>
@@ -38,42 +42,110 @@
         list.appendChild(empty);
       }
 
+      function jobCardView(job) {
+        const logTail = Array.isArray(job.logTail) ? job.logTail : [];
+        return {
+          className: 'job-card status-' + job.status,
+          title: job.label || job.id,
+          status: job.status,
+          meta: [job.kind, job.bookmarkName, job.uri, job.message].filter(Boolean).join(' • '),
+          progress: job.progress || '',
+          logText: logTail.slice(-8).join('\n'),
+          fullLog: logTail.join('\n'),
+          canStop: job.status === 'running',
+          canCopy: logTail.length > 0
+        };
+      }
+
+      function setText(element, text) {
+        if (element.textContent !== text) {
+          element.textContent = text;
+        }
+      }
+
+      function setLogText(log, text) {
+        if (log.textContent === text) {
+          return;
+        }
+        const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 4;
+        const scrollTop = log.scrollTop;
+        log.textContent = text;
+        log.scrollTop = atBottom ? log.scrollHeight : scrollTop;
+      }
+
+      function setShown(element, shown) {
+        const display = shown ? '' : 'none';
+        if (element.style.display !== display) {
+          element.style.display = display;
+        }
+      }
+
+      function applyJobView(card, view) {
+        if (card.className !== view.className) card.className = view.className;
+        setText(card.querySelector('.job-title'), view.title);
+        setText(card.querySelector('.job-status'), view.status);
+        setText(card.querySelector('.job-meta'), view.meta);
+        const progress = card.querySelector('.job-progress');
+        setText(progress, view.progress);
+        setShown(progress, view.progress !== '');
+        const log = card.querySelector('.job-log');
+        setLogText(log, view.logText);
+        setShown(log, view.logText !== '');
+        card.fullLog = view.fullLog;
+        setShown(card.querySelector('.job-stop'), view.canStop);
+        setShown(card.querySelector('.job-copy'), view.canCopy);
+      }
+
       function renderJob(job) {
         const card = document.createElement('article');
-        card.className = 'job-card status-' + job.status;
+        card.dataset.jobId = job.id;
 
         const top = document.createElement('div');
         top.className = 'job-topline';
-
         const title = document.createElement('div');
         title.className = 'job-title';
-        title.textContent = job.label || job.id;
-
         const status = document.createElement('span');
         status.className = 'job-status';
-        status.textContent = job.status;
-
         top.append(title, status);
-        card.appendChild(top);
 
         const meta = document.createElement('div');
         meta.className = 'job-meta';
-        meta.textContent = [
-          job.kind,
-          job.bookmarkName,
-          job.uri,
-          job.message
-        ].filter(Boolean).join(' • ');
-        card.appendChild(meta);
 
-        if (Array.isArray(job.logTail) && job.logTail.length) {
-          const log = document.createElement('pre');
-          log.className = 'job-log';
-          log.textContent = job.logTail.slice(-8).join('\n');
-          card.appendChild(log);
-        }
+        const progress = document.createElement('div');
+        progress.className = 'job-progress';
 
+        const log = document.createElement('pre');
+        log.className = 'job-log';
+
+        const actions = document.createElement('div');
+        const stop = document.createElement('button');
+        stop.type = 'button';
+        stop.className = 'job-stop';
+        stop.textContent = 'Stop';
+        stop.addEventListener('click', async () => {
+          try {
+            await $main.jobs.stop(card.dataset.jobId);
+            refresh();
+          } catch (error) {
+            window.electronAPI.errorBox(error.message || String(error));
+          }
+        });
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.className = 'job-copy';
+        copy.textContent = 'Copy log';
+        copy.addEventListener('click', async () => {
+          await navigator.clipboard.writeText(card.fullLog || '');
+        });
+        actions.append(stop, copy);
+
+        card.append(top, meta, progress, log, actions);
+        applyJobView(card, jobCardView(job));
         return card;
+      }
+
+      function updateCard(card, job) {
+        applyJobView(card, jobCardView(job));
       }
 
       async function refresh() {
@@ -83,8 +155,21 @@
             renderEmpty();
             return;
           }
-          list.textContent = '';
-          jobs.forEach(job => list.appendChild(renderJob(job)));
+          const seen = new Set();
+          jobs.forEach(job => {
+            seen.add(job.id);
+            const existing = list.querySelector('[data-job-id="' + CSS.escape(job.id) + '"]');
+            if (existing) {
+              updateCard(existing, job);
+            } else {
+              list.appendChild(renderJob(job));
+            }
+          });
+          list.querySelectorAll('[data-job-id]').forEach(card => {
+            if (!seen.has(card.dataset.jobId)) card.remove();
+          });
+          const empty = list.querySelector('.state');
+          if (empty) empty.remove();
         } catch (error) {
           list.textContent = '';
           const div = document.createElement('div');
@@ -94,6 +179,10 @@
         }
       }
 
+      document.getElementById('clear-btn').addEventListener('click', async () => {
+        await $main.jobs.clearFinished();
+        refresh();
+      });
       refreshBtn.addEventListener('click', refresh);
       refresh();
       window.setInterval(refresh, 2000);

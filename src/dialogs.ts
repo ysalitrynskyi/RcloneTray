@@ -2,11 +2,10 @@
 
 import * as path from 'path'
 import { shell, app, BrowserWindow, Menu, Notification, dialog, nativeTheme, MenuItemConstructorOptions } from 'electron'
-import electronContextMenu from 'electron-context-menu'
-import isDev from 'electron-is-dev'
 import * as settings from './settings'
 import { DialogProps, DialogWindow, Bookmark } from './types'
 import { assertAllowedExternalUrl } from './rclone/external-links'
+import { installUnloadGuard } from './dialog-guard'
 
 /**
  * Set the background color
@@ -37,8 +36,12 @@ function createNewDialog(dialogName: string, options?: DialogOptions, props?: Di
     delete options.$singleId
     
     if (Object.prototype.hasOwnProperty.call(dialogsSingletoneInstances, singleId) && dialogsSingletoneInstances[singleId]) {
-      dialogsSingletoneInstances[singleId]!.focus()
-      return dialogsSingletoneInstances[singleId]
+      const existing = dialogsSingletoneInstances[singleId]!
+      if (existing.isMinimized()) {
+        existing.restore()
+      }
+      existing.focus()
+      return existing
     }
   }
 
@@ -57,7 +60,7 @@ function createNewDialog(dialogName: string, options?: DialogOptions, props?: Di
     webPreferences: {
       backgroundThrottling: false,
       preload: path.join(__dirname, 'dialogs-preload.js'),
-      devTools: isDev,
+      devTools: !app.isPackaged,
       defaultEncoding: 'UTF-8',
       contextIsolation: true,
       nodeIntegration: false,
@@ -71,7 +74,7 @@ function createNewDialog(dialogName: string, options?: DialogOptions, props?: Di
   let theDialog: DialogWindow | null = new BrowserWindow(dialogOptions) as DialogWindow
   
   if (process.platform === 'darwin') {
-    app.dock.show()
+    app.dock?.show()
 
     // Resizing from renderer is blocking process, so next is workaround to get smooth resize without IPC
     theDialog.setSizeAsync = function (width: number, height: number): void {
@@ -85,6 +88,8 @@ function createNewDialog(dialogName: string, options?: DialogOptions, props?: Di
   theDialog.$props = props || {}
 
   theDialog.on('ready-to-show', () => theDialog?.show())
+
+  installUnloadGuard(theDialog, (win, prompt) => dialog.showMessageBoxSync(win, { ...prompt, buttons: [...prompt.buttons] }))
 
   // and load the index.html of the app.
   theDialog.loadFile(path.join(__dirname, '..', 'src', 'ui', 'dialogs', dialogName + '.html'))
@@ -100,7 +105,7 @@ function createNewDialog(dialogName: string, options?: DialogOptions, props?: Di
 
     // On macos hide the dock icon when no active windows by this app.
     if (process.platform === 'darwin' && BrowserWindow.getAllWindows().length < 1) {
-      app.dock.hide()
+      app.dock?.hide()
     }
   })
 
@@ -142,7 +147,7 @@ export function about(): void {
   })
 
   // Close when loose focus, but only when non-dev because even the dev tool trigger the close.
-  if (!isDev && aboutDialog) {
+  if (app.isPackaged && aboutDialog) {
     aboutDialog.on('blur', () => aboutDialog.close())
   }
 }
@@ -208,10 +213,23 @@ export function editBookmark(this: Bookmark): void {
 /**
  * Show OS notification
  */
-export function notification(message: string): void {
-  new Notification({
+export function notification(message: string, level: 'info' | 'error' = 'info'): void {
+  const mode = settings.get('notification_level')
+  const isError = level === 'error' || /fail|error|cannot|refusing|not available/i.test(message)
+  if (mode === 'off') {
+    return
+  }
+  if (mode === 'errors' && !isError) {
+    return
+  }
+  const notice = new Notification({
+    title: 'RcloneTray',
     body: message
-  }).show()
+  })
+  notice.on('click', () => {
+    activity()
+  })
+  notice.show()
 }
 
 /**
@@ -232,7 +250,8 @@ export function uncaughtException(detail: Error | unknown): boolean {
     const choice = dialog.showMessageBoxSync({
       type: 'error',
       buttons: ['Quit RcloneTray', 'Continue'],
-      defaultId: 0,
+      defaultId: 1,
+      cancelId: 1,
       title: 'Error',
       message: 'Unexpected runtime error.',
       detail: errorMessage
@@ -247,22 +266,51 @@ export function uncaughtException(detail: Error | unknown): boolean {
 /**
  * Show confirm exit dialog.
  */
-export function confirmExit(): boolean {
+const quitDialogOptions: Electron.MessageBoxOptions = {
+  type: 'warning',
+  buttons: ['Cancel', 'Quit RcloneTray'],
+  defaultId: 0,
+  cancelId: 0,
+  title: 'Quit RcloneTray',
+  message: 'Are you sure you want to quit?',
+  detail: 'There are active processes that will be terminated.'
+}
+
+export function confirmAction(message: string, confirmLabel: string): boolean {
   const choice = dialog.showMessageBoxSync({
     type: 'warning',
-    buttons: ['Cancel', 'Quit RcloneTray'],
+    buttons: ['Cancel', confirmLabel],
     defaultId: 0,
     cancelId: 0,
-    title: 'Quit RcloneTray',
-    message: 'Are you sure you want to quit?',
-    detail: 'There are active processes that will be terminated.'
+    message
   })
   return choice === 1
 }
 
+export function confirmExit(): boolean {
+  const choice = dialog.showMessageBoxSync(quitDialogOptions)
+  return choice === 1
+}
+
+/** Async so the main process keeps draining rclone stderr while the dialog is open. */
+export function confirmExitAsync(): Promise<boolean> {
+  return dialog.showMessageBox(quitDialogOptions).then((choice) => choice.response === 1)
+}
+
 export function confirmTransfer(method: 'upload' | 'download', bookmarkName: string, source: string, destination: string, preview: string): boolean {
   const action = method === 'upload' ? 'Upload' : 'Download'
-  const choice = dialog.showMessageBoxSync({
+  const choice = dialog.showMessageBoxSync(transferDialogOptions(bookmarkName, source, destination, preview, action))
+  return choice === 1
+}
+
+export function confirmTransferAsync(method: 'upload' | 'download', bookmarkName: string, source: string, destination: string, preview: string): Promise<boolean> {
+  const action = method === 'upload' ? 'Upload' : 'Download'
+  return dialog.showMessageBox(transferDialogOptions(bookmarkName, source, destination, preview, action))
+    .then((choice) => choice.response === 1)
+}
+
+function transferDialogOptions(bookmarkName: string, source: string, destination: string, preview: string, action: string): Electron.MessageBoxOptions {
+  return {
     type: 'warning',
     buttons: ['Cancel', `${action} now`],
     defaultId: 0,
@@ -270,21 +318,26 @@ export function confirmTransfer(method: 'upload' | 'download', bookmarkName: str
     title: `${action} ${bookmarkName}`,
     message: `${action} can overwrite or delete files at the destination.`,
     detail: `Source:\n${source}\n\nDestination:\n${destination}\n\nDry-run preview:\n${preview}`
-  })
-  return choice === 1
+  }
 }
 
+const automaticUploadDialog = (bookmarkName: string, source: string, destination: string): Electron.MessageBoxOptions => ({
+  type: 'warning',
+  buttons: ['Cancel', 'Enable automatic upload'],
+  defaultId: 0,
+  cancelId: 0,
+  title: `Enable automatic upload for ${bookmarkName}?`,
+  message: 'Automatic upload copies changed local files after file changes.',
+  detail: `Source:\n${source}\n\nDestination:\n${destination}\n\nDeletes are not mirrored automatically. Use manual Upload when you need a full sync.`
+})
+
 export function confirmAutomaticUpload(bookmarkName: string, source: string, destination: string): boolean {
-  const choice = dialog.showMessageBoxSync({
-    type: 'warning',
-    buttons: ['Cancel', 'Enable automatic upload'],
-    defaultId: 0,
-    cancelId: 0,
-    title: `Enable automatic upload for ${bookmarkName}?`,
-    message: 'Automatic upload copies changed local files after file changes.',
-    detail: `Source:\n${source}\n\nDestination:\n${destination}\n\nDeletes are not mirrored automatically. Use manual Upload when you need a full sync.`
-  })
-  return choice === 1
+  return dialog.showMessageBoxSync(automaticUploadDialog(bookmarkName, source, destination)) === 1
+}
+
+export function confirmAutomaticUploadAsync(bookmarkName: string, source: string, destination: string): Promise<boolean> {
+  return dialog.showMessageBox(automaticUploadDialog(bookmarkName, source, destination))
+    .then((choice) => choice.response === 1)
 }
 
 /**
@@ -299,9 +352,13 @@ export function missingRclone(detail?: Error | unknown, usingBundled = settings.
     ? 'RcloneTray could not start the bundled Rclone helper. On macOS this can happen when Gatekeeper quarantines helper binaries inside an unsigned app.\n\nRcloneTray will try to repair the bundled helper automatically. If this keeps happening, remove the quarantine attribute from RcloneTray.app or install Rclone system-wide.'
     : 'Seems that Rclone is not installed (or cannot be found) on your system.\n\nYou need to install Rclone to your system or switch to the bundled version of Rclone.'
 
+  const buttons = ['Go Rclone Website', usingBundled ? 'Keep bundled version' : 'Switch to bundled version', 'Quit']
+  if (usingBundled) {
+    buttons.push('Use system rclone')
+  }
   const choice = dialog.showMessageBoxSync({
     type: 'warning',
-    buttons: ['Go Rclone Website', usingBundled ? 'Keep bundled version' : 'Switch to bundled version', 'Quit'],
+    buttons,
     title: 'Error',
     message: `${helpMessage}${detailMessage}`
   })
@@ -311,6 +368,8 @@ export function missingRclone(detail?: Error | unknown, usingBundled = settings.
     app.exit()
   } else if (choice === 1) {
     settings.set('rclone_use_bundled', true)
+  } else if (choice === 3) {
+    settings.set('rclone_use_bundled', false)
   } else {
     app.exit()
   }
@@ -382,7 +441,7 @@ function init(): void {
     ]
   }
 
-  if (isDev) {
+  if (!app.isPackaged) {
     template.push({
       label: 'Debug',
       submenu: [
@@ -395,13 +454,6 @@ function init(): void {
 
   // Set the global menu, as it is part of the dialogs.
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
-
-  // Enable context menus.
-  electronContextMenu({
-    showCopyImageAddress: false,
-    showSaveImageAs: false,
-    showInspectElement: isDev
-  })
 }
 
 // Do the initialization.

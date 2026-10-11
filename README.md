@@ -35,7 +35,7 @@ A simple desktop app that lives in your system tray and gives [Rclone](https://r
 - **Bundled Rclone** — works out of the box, no separate install.
 - **Cross-platform** — Windows, macOS, and Linux.
 - **Automatic dark mode** — follows your system theme.
-- **Secure by default** — sandboxed renderer with context isolation.
+- **Secure by default** — sandboxed renderers with context isolation, a strict Content-Security-Policy, and checksum-verified bundled rclone.
 
 ## Install
 
@@ -43,7 +43,7 @@ A simple desktop app that lives in your system tray and gives [Rclone](https://r
 
 | Platform | Architecture          | Files                  |
 | -------- | --------------------- | ---------------------- |
-| Windows  | x64, ia32, arm64      | `.exe` installer       |
+| Windows  | x64, arm64            | `.exe` installer       |
 | macOS    | Intel & Apple Silicon | `.dmg`, `.zip`         |
 | Linux    | x64                   | `.AppImage`, `.deb`    |
 
@@ -72,12 +72,16 @@ chmod +x RcloneTray-*.AppImage
 ./RcloneTray-*.AppImage
 ```
 
+On Ubuntu 23.10 and later the AppImage may refuse to start because AppArmor
+restricts the Chromium sandbox. Install the `.deb` instead, or see
+[Getting Started](docs/GETTING_STARTED.md#linux).
+
 ## Requirements
 
 **Operating systems**
 
-- Windows 7/8/10/11 (x64, arm64)
-- macOS 10.10 or later (Intel and Apple Silicon)
+- Windows 10 or 11 (x64, arm64)
+- macOS 12 or later (Intel and Apple Silicon)
 - Linux (x64) with a desktop environment that supports tray icons
 
 **Mounting (optional)**
@@ -101,6 +105,9 @@ If you would rather not install a FUSE driver, use the WebDAV serve feature inst
    provider-specific fields like bucket, access key, region, and so on appear once you
    pick a provider).
 5. Mount, sync, or serve the remote from the tray menu. Use **Activity** to see running jobs and recent rclone output.
+
+RcloneTray changes only the remote you create, edit or delete. Other sections of
+`rclone.conf` are left byte-for-byte, and an encrypted config is not modified.
 
 **Prefer the terminal?** You don't have to use the dialog at all. Run `rclone config`
 in your terminal to create or edit remotes — RcloneTray reads the same

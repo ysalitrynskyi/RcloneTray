@@ -1,25 +1,44 @@
 'use strict'
 
 import { execFile, execFileSync, spawn, spawnSync, ChildProcess } from 'child_process'
+import { StringDecoder } from 'string_decoder'
+import * as net from 'net'
 import * as os from 'os'
 import * as path from 'path'
 import * as fs from 'fs'
 import chokidar from 'chokidar'
-import { app, shell } from 'electron'
-import isDev from 'electron-is-dev'
+import { app, powerMonitor, shell } from 'electron'
 import * as settings from './settings'
 import * as dialogs from './dialogs'
-import { formatTerminalCommand, shouldAppendAutoConfirm } from './rclone/command'
-import { mergeBookmarkConfig } from './rclone/config-repository'
+import { formatTerminalCommand, shouldAppendAutoConfirm, shouldAppendPerformanceFlags, windowsConsoleArgs } from './rclone/command'
+import { obscureSecret } from './rclone/obscure'
+import { AUTO_UPLOAD_IGNORED, automaticUploadDelay, changesAutoUploadTarget } from './rclone/auto-upload'
+import { sanitizeCustomArgs, splitCommandArgs } from './rclone/custom-args'
+import { extractServeUrl, formatLogLine, isFatalLog, isMountAttemptLine, parseLogLine, progressFromLog, redactSecrets, WatchedJobKind } from './rclone/log-lines'
+import { DryRunCounter } from './rclone/dry-run'
+import { readConfigText } from './rclone/config-repository'
+import { createRemote, deleteRemote, rollbackCreatedRemote, updateRemote } from './rclone/config-mutations'
+import { ConfigEditError, isEncryptedRcloneConfig } from './rclone/config-text'
 import { assertAllowedExternalUrl } from './rclone/external-links'
-import { getJobStates as listJobStates, startJob, appendJobLog, updateJob, finishJob, JobKind } from './rclone/job-state'
+import {
+  controlKind,
+  displayDefault,
+  findMissingRequiredOption,
+  isBucketBasedPrefix,
+  isOptionHidden,
+  providerDocsUrl,
+  providerNeedsOAuth,
+  remotePathSpec,
+  selectConfigFields
+} from './rclone/provider-fields'
+import { assertNewRemoteName } from './rclone/remote-name'
+import { getJobStates as listJobStates, startJob, appendJobLog, updateJob, finishJob, clearFinishedJobs as dropFinishedJobs, JobKind } from './rclone/job-state'
 import { getSyncLocalPathError } from './rclone/path-safety'
 import {
   Bookmark,
   BookmarksCache,
   ProvidersCache,
   Provider,
-  ProviderOption,
   RcloneCache,
   ProcessRegistry,
   ProcessRegistryEntry,
@@ -29,6 +48,7 @@ import {
 } from './types'
 
 export { enquoteCommand, shouldAppendAutoConfirm } from './rclone/command'
+export { isProviderOptionActive } from './rclone/provider-fields'
 
 /**
  * Define unsupported provider types
@@ -38,16 +58,8 @@ const UnsupportedRcloneProviders: string[] = [
   'crypt'
 ]
 
-/**
- * Define providers that require buckets and cannot works with root.
- */
-const BucketRequiredProviders: string[] = [
-  'b2',
-  'swift',
-  's3',
-  'gsc',
-  'hubic'
-]
+const ProviderAliases: Record<string, string> = {}
+const createsInFlight = new Set<string>()
 
 /**
  * Rclone executable filename
@@ -56,7 +68,7 @@ const RcloneBinaryName: string = process.platform === 'win32' ? 'rclone.exe' : '
 
 /**
  * Map Node's process.arch values to the architecture folder names produced by
- * update-rclone-binaries.sh (which uses rclone/Go naming). Without this mapping
+ * scripts/fetch-rclone.js (which uses rclone/Go naming). Without this mapping
  * the bundled binary cannot be found on x64 (Node) vs amd64 (rclone) etc.
  */
 const RcloneArchMap: Record<string, string> = {
@@ -78,6 +90,21 @@ const RcloneBinaryBundled: string = process.env.RCLONETRAY_RCLONE_PATH
     : path.join(app.getAppPath(), 'rclone', process.platform, RcloneBinaryArch, RcloneBinaryName)
 
 let bundledRclonePrepared = false
+let sessionUseBundled: boolean | null = null
+let activeBundledBinary = RcloneBinaryBundled
+
+function useBundledRclone(): boolean {
+  if (sessionUseBundled === null) {
+    sessionUseBundled = settings.get('rclone_use_bundled')
+  }
+  return sessionUseBundled
+}
+
+export function useSystemRclone(): void {
+  settings.set('rclone_use_bundled', false)
+  sessionUseBundled = false
+  bundledRclonePrepared = false
+}
 
 /**
  * System's temp directory
@@ -110,27 +137,99 @@ const BookmarkProcessRegistry: ProcessRegistry = {}
 const AutomaticUploadRegistry: AutoUploadRegistryType = {}
 
 /**
+ * Set once the user confirmed quitting: nothing new may start after that.
+ */
+let quitting = false
+
+/**
+ * Windows mounts waiting for the one that is still starting. rclone assigns a
+ * drive letter when it starts, so two mounts started together pick the same one.
+ */
+const pendingWindowsMounts: string[] = []
+
+/**
  * Prepare array to Rclone command, rclone binary should be ommited
  */
 function prepareRcloneCommand(command: string[]): string[] {
   const appendAutoConfirm = shouldAppendAutoConfirm(command)
+  const appendPerformance = shouldAppendPerformanceFlags(command)
   const config = getConfigFile()
   if (config) {
     command.unshift('--config', config)
   }
-
-  if (settings.get('rclone_use_bundled')) {
-    prepareBundledRcloneBinary()
-    command.unshift(RcloneBinaryBundled)
-  } else {
-    command.unshift(RcloneBinaryName)
-  }
+  command.unshift('--ask-password=false')
+  command.unshift(rcloneExecutable())
 
   if (appendAutoConfirm) {
     command.push('--auto-confirm')
   }
+  if (appendPerformance) {
+    appendPerformanceFlags(command)
+  }
 
   return command
+}
+
+function rcloneExecutable(): string {
+  if (useBundledRclone()) {
+    prepareBundledRcloneBinary()
+    return activeBundledBinary
+  }
+  return resolveOnPath(RcloneBinaryName)
+}
+
+/**
+ * Find an executable on PATH, skipping empty entries (those are the current
+ * directory on Windows, which must not win over a real install).
+ */
+function resolveOnPath(fileName: string): string {
+  const extra = process.platform === 'darwin'
+    ? ['/opt/homebrew/bin', '/usr/local/bin']
+    : process.platform === 'linux'
+      ? ['/usr/local/bin', '/home/linuxbrew/.linuxbrew/bin']
+      : []
+  const dirs = (process.env.PATH || '').split(path.delimiter).concat(extra).filter((dir) => dir.trim())
+  for (const dir of dirs) {
+    const candidate = path.join(dir, fileName)
+    try {
+      if (fs.existsSync(candidate)) {
+        return candidate
+      }
+    } catch {
+      // Unreadable PATH entry. Try the next one.
+    }
+  }
+  return fileName
+}
+
+function ensureExecutableCopy(binaryPath: string): string {
+  const canRun = (target: string): boolean => {
+    try {
+      fs.accessSync(target, fs.constants.X_OK)
+      return true
+    } catch {
+      return false
+    }
+  }
+  if (!canRun(binaryPath)) {
+    try {
+      fs.chmodSync(binaryPath, 0o755)
+    } catch {
+      // Read-only install (.deb, AppImage, DMG). Copy below.
+    }
+  }
+  if (canRun(binaryPath)) {
+    return binaryPath
+  }
+  const dest = path.join(app.getPath('userData'), 'bin', RcloneBinaryName)
+  fs.mkdirSync(path.dirname(dest), { recursive: true })
+  fs.copyFileSync(binaryPath, dest)
+  try {
+    fs.chmodSync(dest, 0o755)
+  } catch {
+    // The copy is in a user-writable directory; launch will report a real error.
+  }
+  return dest
 }
 
 function prepareBundledRcloneBinary(): void {
@@ -143,12 +242,12 @@ function prepareBundledRcloneBinary(): void {
   }
 
   if (process.platform !== 'win32') {
-    fs.chmodSync(RcloneBinaryBundled, 0o755)
+    activeBundledBinary = ensureExecutableCopy(RcloneBinaryBundled)
   }
 
   if (process.platform === 'darwin') {
     try {
-      execFileSync('/usr/bin/xattr', ['-dr', 'com.apple.quarantine', path.dirname(RcloneBinaryBundled)], {
+      execFileSync('/usr/bin/xattr', ['-dr', 'com.apple.quarantine', path.dirname(activeBundledBinary)], {
         stdio: 'ignore'
       })
     } catch {
@@ -165,36 +264,31 @@ function prepareBundledRcloneBinary(): void {
  */
 export function appendCustomRcloneCommandArgs(commandArray: string[], bookmarkName?: string): string[] {
   const verboseCommandStrPattern = /^-v+$/
-  const filterOutVerboseArgs = (arg: string): boolean => {
-    return !verboseCommandStrPattern.test(arg.trim())
-  }
+  const collect = (raw: string): string[] => sanitizeCustomArgs(
+    splitCommandArgs(raw).filter((arg) => !verboseCommandStrPattern.test(arg)),
+    commandArray
+  )
 
-  const argsSplitterPattern = /[\n\s]+/
-
+  let custom: string[] = []
   const customArgsStr = settings.get('custom_args') || ''
   if (customArgsStr.trim()) {
-    let customGlobalArgs = customArgsStr.trim().split(argsSplitterPattern)
-    customGlobalArgs = customGlobalArgs.filter(filterOutVerboseArgs)
-    commandArray = commandArray.concat(customGlobalArgs)
+    custom = custom.concat(collect(customArgsStr))
   }
 
   if (bookmarkName) {
     const bookmark = getBookmark(bookmarkName)
     if (bookmark._rclonetray_custom_args && bookmark._rclonetray_custom_args.trim()) {
-      let customBookmarkArgs = bookmark._rclonetray_custom_args.trim().split(argsSplitterPattern)
-      customBookmarkArgs = customBookmarkArgs.filter(filterOutVerboseArgs)
-      commandArray = commandArray.concat(customBookmarkArgs)
+      custom = custom.concat(collect(bookmark._rclonetray_custom_args))
     }
   }
 
-  return commandArray.filter((element) => element && element.trim())
+  return commandArray.concat(custom)
 }
 
 /**
  * Maximum output buffer for rclone commands (config dump can be large)
  */
 const RcloneExecMaxBuffer = 32 * 1024 * 1024
-const RclonePreviewTimeoutMs = 30 * 1000
 
 /**
  * Execute async Rclone command.
@@ -203,10 +297,10 @@ const RclonePreviewTimeoutMs = 30 * 1000
 function doCommand(command: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const cmd = prepareRcloneCommand(command)
-    if (isDev) {
+    if (!app.isPackaged) {
       console.info('Rclone[A]', cmd)
     }
-    execFile(cmd[0], cmd.slice(1), { maxBuffer: RcloneExecMaxBuffer }, (err, stdout, stderr) => {
+    execFile(cmd[0], cmd.slice(1), { maxBuffer: RcloneExecMaxBuffer, windowsHide: true }, (err, stdout, stderr) => {
       if (err) {
         console.error('Rclone', err)
         const detail = stderr.toString().trim() || err.message
@@ -224,64 +318,67 @@ function doCommand(command: string[]): Promise<string> {
  */
 function doCommandSync(command: string[]): string {
   const cmd = prepareRcloneCommand(command)
-  if (isDev) {
+  if (!app.isPackaged) {
     console.info('Rclone[S]', cmd)
   }
-  return execFileSync(cmd[0], cmd.slice(1), { maxBuffer: RcloneExecMaxBuffer }).toString()
-}
-
-function doCommandSyncCombinedOutput(command: string[]): string {
-  const cmd = prepareRcloneCommand(command)
-  if (isDev) {
-    console.info('Rclone[SC]', cmd)
-  }
-  const result = spawnSync(cmd[0], cmd.slice(1), {
-    maxBuffer: RcloneExecMaxBuffer,
-    encoding: 'utf8',
-    timeout: RclonePreviewTimeoutMs
-  })
-  if (result.error) {
-    throw result.error
-  }
-  const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim()
-  if (result.status !== 0) {
-    throw new Error(output || `Rclone exited with status ${result.status}`)
-  }
-  return output
+  return execFileSync(cmd[0], cmd.slice(1), { maxBuffer: RcloneExecMaxBuffer, windowsHide: true }).toString()
 }
 
 /**
  * Execute command in terminal
  */
+function openWindowsConsole(title: string, command: string[]): void {
+  const cmdExe = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe')
+  const child = spawn(cmdExe, [windowsConsoleArgs(title, command)], {
+    detached: true,
+    windowsHide: true,
+    windowsVerbatimArguments: true,
+    stdio: 'ignore'
+  })
+  child.once('error', (error) => {
+    dialogs.notification(`Could not open a console window: ${error.message}`, 'error')
+  })
+  child.unref()
+}
+
 function doCommandInTerminal(command: string[]): void {
   const cmdStr = formatTerminalCommand(command)
 
-  if (isDev) {
+  if (!app.isPackaged) {
     console.log('Rclone[T]', cmdStr)
   }
 
   if (process.platform === 'darwin') {
     const escapedCmd = cmdStr.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-    spawn('/usr/bin/osascript', ['-e', `tell application "Terminal" to do script "${escapedCmd}" activate`])
-  } else if (process.platform === 'linux') {
-    const tempCmdDir = fs.mkdtempSync(path.join(tempDir, 'rclonetray-'))
-    fs.chmodSync(tempCmdDir, 0o700)
-    const tempCmdWrapper = path.join(tempCmdDir, 'cmd-wrapper.sh')
-    const data = new Uint8Array(Buffer.from(`#!/usr/bin/env sh\nset -e\n${cmdStr}\n`))
-    fs.writeFile(tempCmdWrapper, data, { mode: 0o700, flag: 'wx' }, (err) => {
-      if (err) {
-        throw new Error('Cannot open terminal')
-      } else {
-        fs.chmodSync(tempCmdWrapper, 0o700)
-        spawn('x-terminal-emulator', ['-e', tempCmdWrapper], {
-          detached: true,
-          stdio: 'ignore'
-        }).unref()
-      }
-    })
-  } else if (process.platform === 'win32') {
-    throw new Error('Opening rclone console commands in a Windows terminal is not supported by this build.')
+    spawn('/usr/bin/osascript', ['-e', `tell application "Terminal" to do script "${escapedCmd}" activate`], { windowsHide: true })
+    return
   }
+  if (process.platform === 'win32') {
+    openWindowsConsole('RcloneTray', command)
+    return
+  }
+  const tempCmdDir = fs.mkdtempSync(path.join(tempDir, 'rclonetray-'))
+  fs.chmodSync(tempCmdDir, 0o700)
+  const tempCmdWrapper = path.join(tempCmdDir, 'cmd-wrapper.sh')
+  const script = `#!/usr/bin/env sh\n${cmdStr}\nstatus=$?\nif [ "$status" -ne 0 ]; then\n  echo\n  echo "rclone exited with status $status. Press Enter to close."\n  read _unused\nfi\nexit "$status"\n`
+  fs.writeFileSync(tempCmdWrapper, script, { mode: 0o700 })
+  const terminals = ['x-terminal-emulator', 'gnome-terminal', 'konsole', 'xfce4-terminal', 'xterm']
+  const tryTerminal = (index: number): void => {
+    if (index >= terminals.length) {
+      dialogs.notification('Could not open a terminal. Install x-terminal-emulator, gnome-terminal, or xterm.', 'error')
+      return
+    }
+    const terminal = terminals[index]
+    const args = terminal === 'gnome-terminal' || terminal === 'xfce4-terminal'
+      ? ['--', tempCmdWrapper]
+      : terminal === 'konsole'
+        ? ['-e', tempCmdWrapper]
+        : ['-e', tempCmdWrapper]
+    const child = spawn(terminal, args, { detached: true, stdio: 'ignore' })
+    child.once('error', () => tryTerminal(index + 1))
+    child.unref()
+  }
+  tryTerminal(0)
 }
 
 /**
@@ -291,11 +388,30 @@ class BookmarkProcessManager {
   id: string
   bookmarkName: string
   processName: string
+  private decoder = new StringDecoder('utf8')
+  private pendingLine = ''
+  private mountTimer: ReturnType<typeof setTimeout> | null = null
+  private childEnv: NodeJS.ProcessEnv | null = null
+  private lastError = ''
 
   constructor(processName: string, bookmarkName: string) {
     this.id = `${bookmarkName}:${processName}`
     this.bookmarkName = bookmarkName
     this.processName = processName
+  }
+
+  private watchedKind(): WatchedJobKind {
+    if (this.processName === 'mount') return 'mount'
+    if (this.processName === 'download' || this.processName === 'upload') return 'transfer'
+    if (this.processName.startsWith('serve_')) return 'serve'
+    return 'other'
+  }
+
+  private clearMountTimer(): void {
+    if (this.mountTimer) {
+      clearTimeout(this.mountTimer)
+      this.mountTimer = null
+    }
   }
 
   private getJobKind(): JobKind {
@@ -310,7 +426,8 @@ class BookmarkProcessManager {
   /**
    * Create new monitored process
    */
-  create(command: string[]): void {
+  create(command: string[], env?: NodeJS.ProcessEnv): void {
+    this.childEnv = env || null
     if (!command || command.length < 1) {
       throw new Error('Broken Rclone command')
     }
@@ -322,8 +439,15 @@ class BookmarkProcessManager {
 
     let cmd = prepareRcloneCommand(command)
     cmd = appendCustomRcloneCommandArgs(cmd, this.bookmarkName)
+    if (!cmd.includes('--use-json-log')) {
+      cmd.push('--use-json-log')
+    }
 
-    const child = spawn(cmd[0], cmd.slice(1))
+    const child = spawn(cmd[0], cmd.slice(1), {
+      windowsHide: true,
+      stdio: ['ignore', 'ignore', 'pipe'],
+      env: this.childEnv || process.env
+    })
     BookmarkProcessRegistry[id] = {
       bookmarkName: this.bookmarkName,
       processName: this.processName,
@@ -340,7 +464,7 @@ class BookmarkProcessManager {
       pid: child.pid
     })
 
-    if (isDev) {
+    if (!app.isPackaged) {
       console.log('Rclone[BP]', cmd)
     }
 
@@ -355,24 +479,55 @@ class BookmarkProcessManager {
     })
 
     BookmarkProcessRegistry[id].process.on('close', (code, signal) => {
-      if (BookmarkProcessRegistry[id]?.data.OK) {
-        if (BookmarkProcessRegistry[id].processName === 'download') {
-          dialogs.notification(`Downloading from ${BookmarkProcessRegistry[id].bookmarkName} is finished`)
-        } else if (BookmarkProcessRegistry[id].processName === 'upload') {
-          dialogs.notification(`Uploading to ${BookmarkProcessRegistry[id].bookmarkName} is finished`)
-        } else if (BookmarkProcessRegistry[id].processName === 'mount') {
-          dialogs.notification(`Unmounted ${BookmarkProcessRegistry[id].bookmarkName}`)
-        } else if (BookmarkProcessRegistry[id].processName.startsWith('serve_')) {
-          const protocol = BookmarkProcessRegistry[id].data.protocol as ServeProtocol
-          const servingProtocolName = getAvailableServeProtocols()[protocol]
-          dialogs.notification(`${servingProtocolName} server for ${BookmarkProcessRegistry[id].bookmarkName} is stopped`)
+      this.clearMountTimer()
+      const entry = BookmarkProcessRegistry[id]
+      if (!entry) {
+        return
+      }
+      const transfer = entry.processName === 'download' || entry.processName === 'upload'
+      const success = code === 0 && !signal
+      const stoppedByUs = !!signal || quitting
+      const exitMessage = signal ? `Stopped by ${signal}` : `Exited with code ${code ?? 'unknown'}`
+      const reason = this.lastError || exitMessage
+      if (transfer) {
+        if (success) {
+          const verb = entry.processName === 'download' ? 'Downloading from' : 'Uploading to'
+          dialogs.notification(`${verb} ${entry.bookmarkName} is finished`)
+          finishJob(id, 'succeeded')
+        } else {
+          finishJob(id, signal ? 'cancelled' : 'failed', signal ? exitMessage : reason)
+          if (!stoppedByUs) {
+            const verb = entry.processName === 'download' ? 'Download from' : 'Upload to'
+            dialogs.notification(`${verb} ${entry.bookmarkName} failed: ${reason}`, 'error')
+          }
         }
-        finishJob(id, 'succeeded')
+        const pending = AutomaticUploadRegistry[entry.bookmarkName]
+        if (entry.processName === 'upload' && pending?.dirty) {
+          pending.dirty = false
+          if (success && !quitting) {
+            scheduleAutomaticUpload(entry.bookmarkName)
+          }
+        }
+      } else if (entry.data.OK) {
+        const clean = success || stoppedByUs
+        if (entry.processName === 'mount') {
+          dialogs.notification(clean ? `Unmounted ${entry.bookmarkName}` : `Mount of ${entry.bookmarkName} stopped: ${reason}`, clean ? 'info' : 'error')
+        } else if (entry.processName.startsWith('serve_')) {
+          const protocol = entry.data.protocol as ServeProtocol
+          const servingProtocolName = serveProtocolLabel(protocol)
+          dialogs.notification(clean ? `${servingProtocolName} server for ${entry.bookmarkName} is stopped` : `${servingProtocolName} server for ${entry.bookmarkName} stopped: ${reason}`, clean ? 'info' : 'error')
+        }
+        finishJob(id, clean ? 'succeeded' : 'failed', clean ? undefined : reason)
       } else {
-        const message = signal ? `Stopped by ${signal}` : `Exited with code ${code ?? 'unknown'}`
-        finishJob(id, signal ? 'cancelled' : 'failed', message)
+        finishJob(id, signal ? 'cancelled' : 'failed', signal ? exitMessage : reason)
+        if (!stoppedByUs && entry.processName !== 'ncdu') {
+          dialogs.notification(`${entry.processName === 'mount' ? 'Mount' : 'Server'} for ${entry.bookmarkName} failed: ${reason}`, 'error')
+        }
       }
       delete BookmarkProcessRegistry[id]
+      if (entry.processName === 'mount') {
+        startNextWindowsMount()
+      }
       fireRcloneUpdateActions()
     })
   }
@@ -414,6 +569,10 @@ class BookmarkProcessManager {
    */
   kill(signal?: NodeJS.Signals): void {
     if (this.exists()) {
+      const pending = AutomaticUploadRegistry[this.bookmarkName]
+      if (this.processName === 'upload' && pending) {
+        pending.dirty = false
+      }
       finishJob(this.id, 'cancelled', 'Stopped by user')
       BookmarkProcessRegistry[this.id].process.kill(signal || 'SIGTERM')
     } else {
@@ -424,10 +583,14 @@ class BookmarkProcessManager {
   /**
    * Kill all processes for given bookmark
    */
-  static killAll(bookmarkName?: string): void {
+  static killAll(bookmarkName?: string, signal?: NodeJS.Signals): void {
     Object.values(BookmarkProcessRegistry).forEach((item) => {
       if (!bookmarkName || item.bookmarkName === bookmarkName) {
-        item.process.kill()
+        try {
+          item.process.kill(signal)
+        } catch {
+          // Already gone.
+        }
       }
     })
   }
@@ -442,100 +605,89 @@ class BookmarkProcessManager {
   /**
    * Process rclone output line and do action
    */
+  private failWatchedJob(message: string): void {
+    this.clearMountTimer()
+    this.lastError = message
+    dialogs.notification(`${this.bookmarkName}: ${message}`, 'error')
+    finishJob(this.id, 'failed', message)
+    const child = BookmarkProcessRegistry[this.id]?.process
+    if (child && !child.killed) {
+      child.kill()
+    }
+    fireRcloneUpdateActions()
+  }
+
+  private markMounted(): void {
+    this.clearMountTimer()
+    if (!this.exists() || this.get('OK')) {
+      return
+    }
+    this.set('OK', true)
+    const where = this.get('mountpoint')
+    dialogs.notification(where && where !== '*' ? `Mounted ${this.bookmarkName} on ${where}` : `Mounted ${this.bookmarkName}`)
+    startNextWindowsMount()
+    fireRcloneUpdateActions()
+  }
+
   rcloneProcessWatchdogLine(logLine: string): void {
-    appendJobLog(this.id, logLine)
-    interface LineInfo {
-      time: string
-      level: string
-      message: string
+    const secrets = [String(this.childEnv?.RCLONE_PASS || ''), String(settings.get('rclone_serving_password') || '')].filter(Boolean)
+    const safeLine = redactSecrets(logLine, secrets)
+    appendJobLog(this.id, formatLogLine(safeLine))
+    const parsed = parseLogLine(safeLine)
+    const progress = progressFromLog(safeLine)
+    if (progress) {
+      updateJob(this.id, { progress })
+    }
+    const kind = this.watchedKind()
+    if (parsed.level === 'error' || parsed.level === 'critical') {
+      this.lastError = parsed.objectName ? `${parsed.objectName}: ${parsed.message}` : parsed.message
     }
 
-    const lineInfo: LineInfo = {
-      time: logLine.substring(0, 19),
-      level: '',
-      message: ''
-    }
-
-    const logParts = logLine.substring(19).trim().split(':')
-    const potentialLevel = (logParts[0] || '').toString().toUpperCase().trim()
-
-    if (['ERROR', 'NOTICE', 'INFO', 'DEBUG'].indexOf(potentialLevel) === -1) {
-      lineInfo.level = 'UNKNOWN'
-      lineInfo.message = logParts.join(':').trim()
-    } else {
-      lineInfo.level = potentialLevel
-      lineInfo.message = logParts.slice(1).join(':').trim()
-    }
-
-    if (/rclone.*finishing/i.test(lineInfo.message)) {
-      fireRcloneUpdateActions()
+    if (isFatalLog(parsed, kind)) {
+      this.failWatchedJob(parsed.message || 'Rclone failed')
       return
     }
 
-    if (/(Error while|Failed to|Fatal Error|coudn't connect)/i.test(lineInfo.message)) {
-      dialogs.notification(lineInfo.message)
-      finishJob(this.id, 'failed', lineInfo.message)
-      BookmarkProcessRegistry[this.id].process.kill()
-      fireRcloneUpdateActions()
+    if (kind === 'mount' && /^>Init:/.test(parsed.message) && !this.get('OK')) {
+      this.markMounted()
       return
     }
 
-    if (/Mounting on "/.test(lineInfo.message)) {
-      dialogs.notification(`Mounted ${this.bookmarkName}`)
-      fireRcloneUpdateActions()
-      this.set('OK', true)
-      return
-    }
-
-    const addressInUse = lineInfo.message.match(/Opening listener.*address already in use/i)
-    if (addressInUse) {
-      dialogs.notification(addressInUse[0])
-      finishJob(this.id, 'failed', addressInUse[0])
-      BookmarkProcessRegistry[this.id].process.kill()
-      fireRcloneUpdateActions()
-      return
-    }
-
-    const matchingString = lineInfo.message.match(/(Serving FTP on|Serving on|Server started on|Serving restic REST API on)\s*(.*)$/i)
-    if (matchingString && matchingString[2]) {
-      dialogs.notification(matchingString[0])
-      this.set('OK', true)
-      if (matchingString[1] === 'Serving FTP on') {
-        this.set('URI', 'ftp://' + matchingString[2])
-        updateJob(this.id, { uri: 'ftp://' + matchingString[2] })
-      } else {
-        this.set('URI', matchingString[2])
-        updateJob(this.id, { uri: matchingString[2] })
+    if (kind === 'mount' && isMountAttemptLine(parsed) && !this.mountTimer && !this.get('OK')) {
+      const letter = parsed.message.match(/Mounting on "([A-Za-z]:)/)
+      if (letter) {
+        this.set('mountpoint', letter[1])
       }
-      fireRcloneUpdateActions()
+      // Linux FUSE mounts do not log Init; elsewhere this only covers a missed line.
+      this.mountTimer = setTimeout(() => {
+        this.mountTimer = null
+        this.markMounted()
+      }, process.platform === 'linux' ? 750 : 5000)
       return
     }
 
-    if (isDev) {
-      console.log('Rclone Watchdog', lineInfo)
+    if (kind === 'serve' && !this.get('OK') && parsed.level !== 'debug') {
+      const uri = extractServeUrl(parsed.message)
+      if (uri) {
+        const protocol = this.processName.replace(/^serve_/, '') as ServeProtocol
+        dialogs.notification(`${serveProtocolLabel(protocol)} server for ${this.bookmarkName} is running at ${uri}`)
+        this.set('OK', true)
+        this.set('URI', uri)
+        updateJob(this.id, { uri })
+        fireRcloneUpdateActions()
+      }
     }
   }
 
   /**
-   * Helper function that split stream to lines and send to rcloneProcessWatchdogLine for processing
+   * Reassemble stderr across chunks without splitting a UTF-8 character.
    */
   rcloneProcessWatchdog(data: Buffer): void {
-    if (!BookmarkProcessRegistry[this.id].lineBuffer) {
-      BookmarkProcessRegistry[this.id].lineBuffer = ''
-    }
-
-    const splitted = data.toString().split(/\r?\n/)
-    const inTactLines = splitted.slice(0, splitted.length - 1)
-
-    if (inTactLines.length > 0) {
-      inTactLines[0] = (BookmarkProcessRegistry[this.id].lineBuffer || '') + inTactLines[0]
-    }
-
-    BookmarkProcessRegistry[this.id].lineBuffer = splitted[splitted.length - 1]
-
-    for (let i = 0; i < inTactLines.length; ++i) {
-      const line = inTactLines[i].trim()
-      if (line) {
+    const text = this.pendingLine + this.decoder.write(data)
+    const parts = text.split(/\r?\n/)
+    this.pendingLine = parts.pop() || ''
+    for (const line of parts) {
+      if (line.trim()) {
         this.rcloneProcessWatchdogLine(line)
       }
     }
@@ -561,24 +713,36 @@ function updateVersionCache(): void {
 /**
  * Update bookmarks cache
  */
+let bookmarkCacheGeneration = 0
+
 function updateBookmarksCache(): Promise<void> {
+  const generation = ++bookmarkCacheGeneration
   return doCommand(['config', 'dump'])
     .then((bookmarksStr) => {
-      Cache.bookmarks = {}
+      if (generation !== bookmarkCacheGeneration) {
+        return
+      }
+      const next: BookmarksCache = {}
       try {
         const bookmarks = JSON.parse(bookmarksStr) as Record<string, Omit<Bookmark, '$name'>>
 
         Object.keys(bookmarks).forEach((key) => {
           const bookmark = bookmarks[key]
-          if (!bookmark.type || UnsupportedRcloneProviders.indexOf(bookmark.type) !== -1) {
-            return
+          const stored = { ...bookmark, $name: key } as Bookmark
+          if (!bookmark.type) {
+            stored.$broken = '1'
+          } else if (UnsupportedRcloneProviders.indexOf(bookmark.type) !== -1) {
+            stored.$limited = '1'
           }
-          Cache.bookmarks[key] = { ...bookmark, $name: key } as Bookmark
+          next[key] = stored
         })
-      } catch (err) {
+      } catch {
         throw new Error('Problem reading bookmarks list.')
       }
+      Cache.bookmarks = next
       fireRcloneUpdateActions()
+      armSavedAutomaticUploads()
+      armAutoMounts()
     })
     .catch((err) => {
       console.error('Rclone', 'Cannot update bookmarks cache:', err)
@@ -595,73 +759,132 @@ function updateProvidersCache(): Promise<void> {
       let providers: Provider[]
       try {
         providers = JSON.parse(providersStr)
-      } catch (err) {
+      } catch {
         throw new Error('Cannot read providers list.')
       }
 
       Cache.providers = {}
+      Object.keys(ProviderAliases).forEach((key) => {
+        delete ProviderAliases[key]
+      })
       providers.forEach((provider) => {
         if (UnsupportedRcloneProviders.indexOf(provider.Prefix) !== -1) {
           return
         }
 
-        if (BucketRequiredProviders.indexOf(provider.Prefix) !== -1) {
-          provider.Options.unshift({
-            $Label: 'Bucket or Path',
-            $Type: 'string',
-            Name: '_rclonetray_remote_path',
-            Help: '',
-            Required: true,
-            Hide: false,
-            Advanced: false
-          })
-        }
-
-        provider.Options = provider.Options.map((optionDefinition) => {
-          optionDefinition.$Type = 'string'
-          if (optionDefinition.Default === true || optionDefinition.Default === false) {
-            optionDefinition.$Type = 'boolean'
-          } else if (typeof optionDefinition.Default === 'number' && !isNaN(optionDefinition.Default) && isFinite(optionDefinition.Default)) {
-            optionDefinition.$Type = 'number'
-          } else if (optionDefinition.IsPassword) {
-            optionDefinition.$Type = 'password'
-          }
-
-          optionDefinition.$Namespace = 'options'
-          return optionDefinition
-        })
-
-        provider.Options.push({
-          $Label: 'Local Path',
-          $Type: 'directory',
-          Name: '_rclonetray_local_path_map',
-          Help: 'Set local directory that could coresponding to the remote root. This option is required in order to use upload and download functions.',
+        const bucketBased = isBucketBasedPrefix(provider.Prefix)
+        provider.Options.unshift({
+          $Label: bucketBased ? 'Bucket or Path' : 'Remote path',
+          $Type: 'string',
+          Name: '_rclonetray_remote_path',
+          Help: bucketBased
+            ? 'Container, bucket, or a path inside it. Upload and Download refuse an empty path so a sync cannot delete every container.'
+            : 'Path on the remote. Leave this empty to use the remote default. For SFTP and FTP that is the home directory, not the filesystem root.',
           Required: false,
           Hide: false,
           Advanced: false
         })
 
         provider.Options.push({
-          $Label: 'Custom Args',
+          $Label: 'Local Path',
+          $Type: 'directory',
+          Name: '_rclonetray_local_path_map',
+          Help: 'Local directory that corresponds to the remote path. Required for upload and download.',
+          Required: false,
+          Hide: false,
+          Advanced: false
+        })
+        provider.Options.push({
+          $Label: 'Mount read only',
+          $Type: 'boolean',
+          Name: '_rclonetray_mount_read_only',
+          Help: 'Mount this remote read-only.',
+          Required: false,
+          Hide: false,
+          Advanced: true
+        })
+        provider.Options.push({
+          $Label: 'Mount VFS mode',
+          $Type: 'string',
+          Name: '_rclonetray_vfs_cache_mode',
+          Help: 'Overrides the Preferences VFS mode for this remote. Leave empty to use the global setting. off, minimal, writes, or full.',
+          Required: false,
+          Hide: false,
+          Advanced: true
+        })
+        provider.Options.push({
+          $Label: 'Mount cache size',
+          $Type: 'string',
+          Name: '_rclonetray_vfs_cache_max_size',
+          Help: 'Optional VFS cache size, for example 1G.',
+          Required: false,
+          Hide: false,
+          Advanced: true
+        })
+        provider.Options.push({
+          $Label: 'Exclude patterns',
           $Type: 'text',
-          Name: '_rclonetray_custom_args',
-          Help: `Custom arguments separated by space or new-line.\nRead more about options at https://rclone.org/${provider.Name}/#standard-options`,
+          Name: '_rclonetray_exclude',
+          Help: 'One rclone --exclude pattern per line. Used by Upload and Download.',
+          Required: false,
+          Hide: false,
+          Advanced: true
+        })
+        provider.Options.push({
+          $Label: 'Mount at launch',
+          $Type: 'boolean',
+          Name: '_rclonetray_auto_mount',
+          Help: 'Mount this remote when RcloneTray starts.',
           Required: false,
           Hide: false,
           Advanced: true
         })
 
-        provider.Options = provider.Options.map((item) => {
-          if (!item.$Label) {
-            item.$Label = item.Name
+        provider.Options.push({
+          $Label: 'Custom Args',
+          $Type: 'text',
+          Name: '_rclonetray_custom_args',
+          Help: `Custom arguments separated by space or newline.\nRead more about options at ${providerDocsUrl(provider.Prefix)}`,
+          Required: false,
+          Hide: false,
+          Advanced: true
+        })
+
+        provider.Options = provider.Options.map((optionDefinition) => {
+          const kind = controlKind(optionDefinition)
+          if (kind === 'boolean') {
+            optionDefinition.$Type = 'boolean'
+          } else if (kind === 'tristate') {
+            optionDefinition.$Type = 'tristate'
+            optionDefinition.Default = displayDefault(optionDefinition)
+          } else if (kind === 'number') {
+            optionDefinition.$Type = 'number'
+          } else if (kind === 'password') {
+            optionDefinition.$Type = 'password'
+          } else if (kind === 'directory' || kind === 'file' || kind === 'text') {
+            optionDefinition.$Type = kind
+          } else {
+            optionDefinition.$Type = 'string'
+            if (optionDefinition.DefaultStr || Array.isArray(optionDefinition.Default)) {
+              optionDefinition.Default = displayDefault(optionDefinition)
+            }
+          }
+          optionDefinition.Hide = isOptionHidden(optionDefinition.Hide)
+          optionDefinition.$Namespace = 'options'
+          if (!optionDefinition.$Label) {
+            optionDefinition.$Label = optionDefinition.Name
               .replace(/_/g, ' ')
               .replace(/\w\S*/g, (string) => string.charAt(0).toUpperCase() + string.substring(1))
               .trim()
           }
-          return item
+          return optionDefinition
         })
 
         Cache.providers[provider.Prefix] = provider
+        ProviderAliases[provider.Prefix.toLowerCase()] = provider.Prefix
+        if (provider.Name) {
+          ProviderAliases[provider.Name.toLowerCase()] = provider.Prefix
+        }
       })
 
       fireRcloneUpdateActions()
@@ -691,65 +914,208 @@ function buildTransferCommand(method: 'upload' | 'download', bookmark: Bookmark,
   } else {
     cmd.push(getBookmarkRemoteWithRoot(bookmark), bookmark._rclonetray_local_path_map || '')
   }
-  cmd.push('-vv')
+  cmd.push('-vv', '--stats', '2s')
+  const excludes = String(bookmark._rclonetray_exclude || '').split(/\n/).map((pattern) => pattern.trim()).filter(Boolean)
+  excludes.forEach((pattern) => {
+    cmd.push('--exclude', pattern)
+  })
+  const maxDelete = Number(settings.get('rclone_sync_max_delete') || 0)
+  if (maxDelete > 0 && transferMode === 'sync') {
+    cmd.push('--max-delete', String(maxDelete))
+  }
+  const backupDir = String(settings.get('rclone_sync_backup_dir') || '').trim()
+  if (backupDir && transferMode === 'sync') {
+    cmd.push('--backup-dir', backupDir)
+  }
   return cmd
 }
 
-function buildSyncPreview(method: 'upload' | 'download', bookmark: Bookmark): { ok: boolean; text: string } {
-  try {
-    const previewCommand = appendCustomRcloneCommandArgs(buildTransferCommand(method, bookmark), bookmark.$name)
-    const output = doCommandSyncCombinedOutput([...previewCommand, '--dry-run'])
-    const lines = output.trim().split(/\r?\n/).filter(Boolean).slice(-12)
-    return {
-      ok: true,
-      text: lines.length ? lines.join('\n') : 'Dry-run completed. No file changes reported.'
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    return {
-      ok: false,
-      text: `Dry-run failed before the real sync could start:\n${message}`
-    }
+function appendPerformanceFlags(command: string[]): void {
+  const transfers = Number(settings.get('rclone_transfers') || 0)
+  const checkers = Number(settings.get('rclone_checkers') || 0)
+  const bwlimit = String(settings.get('rclone_bwlimit') || '').trim()
+  if (transfers > 0) {
+    command.push('--transfers', String(transfers))
+  }
+  if (checkers > 0) {
+    command.push('--checkers', String(checkers))
+  }
+  if (bwlimit) {
+    command.push('--bwlimit', bwlimit)
   }
 }
 
-function sync(method: 'upload' | 'download', bookmark: Bookmark, options: { skipConfirm?: boolean } = {}): void {
+const RclonePreviewTimeoutMsLong = 5 * 60 * 1000
+const activePreviews = new Map<string, ChildProcess>()
+const cancelledPreviews = new Set<string>()
+
+interface CollectOptions {
+  key: string
+  bookmarkName?: string
+  onChunk?: (text: string) => void
+  keepOutput?: boolean
+}
+
+function collectCommand(command: string[], timeoutMs: number, options: CollectOptions): Promise<{ ok: boolean; timedOut: boolean; cancelled: boolean; text: string }> {
+  if (activePreviews.has(options.key)) {
+    return Promise.reject(new Error('This check is already running.'))
+  }
+  const cmd = prepareRcloneCommand(appendCustomRcloneCommandArgs(command, options.bookmarkName))
+  return new Promise((resolve) => {
+    const child = spawn(cmd[0], cmd.slice(1), { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    activePreviews.set(options.key, child)
+    const decoder = new StringDecoder('utf8')
+    let output = ''
+    const take = (chunk: Buffer): void => {
+      const text = decoder.write(chunk)
+      options.onChunk?.(text)
+      if (options.keepOutput !== false) {
+        output += text
+        if (output.length > 400000) {
+          output = output.slice(-400000)
+        }
+      }
+    }
+    child.stdout?.on('data', take)
+    child.stderr?.on('data', take)
+    let settled = false
+    const finish = (result: { ok: boolean; timedOut: boolean; text: string }): void => {
+      if (settled) {
+        return
+      }
+      settled = true
+      if (activePreviews.get(options.key) === child) {
+        activePreviews.delete(options.key)
+      }
+      const cancelled = cancelledPreviews.delete(options.key)
+      resolve({ ...result, cancelled })
+    }
+    const timer = setTimeout(() => {
+      child.kill()
+      finish({ ok: false, timedOut: true, text: output })
+    }, timeoutMs)
+    child.on('error', (error) => {
+      clearTimeout(timer)
+      finish({ ok: false, timedOut: false, text: error.message })
+    })
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      const rest = decoder.end()
+      options.onChunk?.(rest)
+      output += rest
+      finish({ ok: code === 0, timedOut: false, text: output })
+    })
+  })
+}
+
+function cancelPreview(key: string): boolean {
+  const child = activePreviews.get(key)
+  if (!child) {
+    return false
+  }
+  cancelledPreviews.add(key)
+  child.kill()
+  return true
+}
+
+export function cancelActivePreview(): void {
+  Array.from(activePreviews.keys()).forEach((key) => cancelPreview(key))
+}
+
+async function buildSyncPreview(method: 'upload' | 'download', bookmark: Bookmark): Promise<{ ok: boolean; timedOut: boolean; cancelled: boolean; text: string }> {
+  const previewCommand = [...buildTransferCommand(method, bookmark).filter((arg) => arg !== '-vv'), '--dry-run']
+  const index = previewCommand.indexOf('--stats')
+  if (index !== -1) {
+    previewCommand.splice(index, 2)
+  }
+  const jobId = `${bookmark.$name}:preview`
+  const counter = new DryRunCounter()
+  startJob({ id: jobId, bookmarkName: bookmark.$name, kind: 'sync-preview', label: `${method} preview ${bookmark.$name}` })
+  fireRcloneUpdateActions()
+  let result: { ok: boolean; timedOut: boolean; cancelled: boolean; text: string }
+  try {
+    result = await collectCommand(previewCommand, RclonePreviewTimeoutMsLong, {
+      key: jobId,
+      bookmarkName: bookmark.$name,
+      onChunk: (text) => counter.write(text),
+      keepOutput: true
+    })
+  } catch (error) {
+    finishJob(jobId, 'failed', error instanceof Error ? error.message : String(error))
+    throw error
+  }
+  counter.end()
+  if (result.cancelled) {
+    finishJob(jobId, 'cancelled', 'Preview stopped')
+    return { ok: false, timedOut: false, cancelled: true, text: 'Preview stopped.' }
+  }
+  if (result.timedOut) {
+    finishJob(jobId, 'failed', 'Preview timed out')
+    return {
+      ok: true,
+      timedOut: true,
+      cancelled: false,
+      text: 'The dry-run did not finish in time. You can continue without a complete preview, or cancel and try again.'
+    }
+  }
+  if (!result.ok) {
+    finishJob(jobId, 'failed', 'Dry-run failed')
+    return {
+      ok: false,
+      timedOut: false,
+      cancelled: false,
+      text: `Dry-run failed before the real sync could start:\n${result.text.trim().split(/\r?\n/).slice(-15).join('\n')}`
+    }
+  }
+  finishJob(jobId, 'succeeded')
+  return { ok: true, timedOut: false, cancelled: false, text: counter.summary().text }
+}
+
+async function sync(method: 'upload' | 'download', bookmark: Bookmark, options: { skipConfirm?: boolean } = {}): Promise<void> {
   const localPath = bookmark._rclonetray_local_path_map || ''
   const localPathError = getSyncLocalPathError(localPath)
   if (localPathError) {
     console.error('Rclone', 'Sync', localPathError, bookmark)
     throw new Error(localPathError)
   }
+  assertBucketPath(bookmark)
 
   if (method === 'upload') {
-    if (!fs.readdirSync(localPath).length) {
-      throw new Error('Cannot upload empty directory.')
+    const names = fs.readdirSync(localPath).filter((name) => !AUTO_UPLOAD_IGNORED.test(name))
+    if (!names.length) {
+      throw new Error('Nothing to upload yet. The folder is empty.')
     }
   }
 
   const oppositeMethod = method === 'download' ? 'upload' : 'download'
 
   if (new BookmarkProcessManager(oppositeMethod, bookmark.$name).exists()) {
-    throw new Error('Cannot perform downloading and uploading in same time.')
+    throw new Error('A transfer is already running for this remote.')
   }
 
   const cmd = buildTransferCommand(method, bookmark, options.skipConfirm ? 'copy' : 'sync')
-  if (!options.skipConfirm) {
-    const preview = buildSyncPreview(method, bookmark)
-    if (!preview.ok) {
-      throw new Error(preview.text)
+  try {
+    if (!options.skipConfirm) {
+      const preview = await buildSyncPreview(method, bookmark)
+      if (preview.cancelled) {
+        return
+      }
+      if (!preview.ok) {
+        throw new Error(preview.text)
+      }
+      const source = method === 'upload' ? localPath : getBookmarkRemoteWithRoot(bookmark)
+      const destination = method === 'upload' ? getBookmarkRemoteWithRoot(bookmark) : localPath
+      const proceed = await dialogs.confirmTransferAsync(method, bookmark.$name, source, destination, preview.text)
+      if (!proceed || quitting) {
+        return
+      }
     }
-    const source = method === 'upload' ? localPath : getBookmarkRemoteWithRoot(bookmark)
-    const destination = method === 'upload' ? getBookmarkRemoteWithRoot(bookmark) : localPath
-    if (!dialogs.confirmTransfer(method, bookmark.$name, source, destination, preview.text)) {
-      return
-    }
-  }
 
-  const proc = new BookmarkProcessManager(method, bookmark.$name)
-  proc.create(cmd)
-  proc.set('OK', true)
-  fireRcloneUpdateActions()
+    const proc = new BookmarkProcessManager(method, bookmark.$name)
+    proc.create(cmd)
+  } finally {
+    fireRcloneUpdateActions()
+  }
 }
 
 /**
@@ -788,9 +1154,12 @@ export async function getProviders(): Promise<ProvidersCache> {
 export function getProvider(providerName: string): Provider {
   if (Object.prototype.hasOwnProperty.call(Cache.providers, providerName)) {
     return Cache.providers[providerName]
-  } else {
-    throw new Error(`No such provider ${providerName}`)
   }
+  const alias = ProviderAliases[providerName.toLowerCase()]
+  if (alias && Cache.providers[alias]) {
+    return Cache.providers[alias]
+  }
+  throw new Error(`No such provider ${providerName}`)
 }
 
 /**
@@ -800,85 +1169,43 @@ export function getBookmarks(): BookmarksCache {
   return Cache.bookmarks
 }
 
-/**
- * Check if bookmark options are valid
- */
-export function isProviderOptionActive(optionDefinition: ProviderOption, values: Record<string, unknown>): boolean {
-  if (optionDefinition.Hide) {
-    return false
-  }
 
-  if (!optionDefinition.Provider) {
-    return true
-  }
 
-  const invert = optionDefinition.Provider.startsWith('!')
-  const rules = (invert ? optionDefinition.Provider.substring(1) : optionDefinition.Provider)
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
-  const activeValues = Object.values(values).map((value) => String(value))
-  const match = rules.some((rule) => activeValues.includes(rule))
-  return invert ? !match : match
+function validateBookmarkOptions(providerObject: Provider, values: Record<string, unknown>, existing?: Record<string, unknown>): void {
+  const missing = findMissingRequiredOption(providerObject.Options, values, existing)
+  if (missing) {
+    throw new Error(`${missing.$Label || missing.Name} field is required`)
+  }
 }
 
-function toRcloneOptionValue(value: unknown): string {
-  if (value === undefined || value === null) {
-    return ''
+async function obscurePasswordFields(fields: { set: Record<string, string>; obscure: string[] }): Promise<void> {
+  for (const key of fields.obscure) {
+    const plain = fields.set[key]
+    let obscured = ''
+    if (/[\r\n\0]/.test(plain)) {
+      throw new Error(`Could not store ${key}. rclone config cannot hold a password with a line break.`)
+    }
+    try {
+      obscured = await obscureSecret(rcloneExecutable(), plain)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`Could not store ${key}. ${message}`)
+    }
+    if (!obscured || obscured === plain) {
+      throw new Error(`Could not store ${key}.`)
+    }
+    fields.set[key] = obscured
   }
-  return String(value)
 }
 
-function validateBookmarkOptions(providerObject: Provider, values: Record<string, unknown>): void {
-  providerObject.Options.forEach((optionDefinition) => {
-    if (!isProviderOptionActive(optionDefinition, values)) {
-      return
-    }
-    const fieldName = optionDefinition.$Label || optionDefinition.Name
-    if (optionDefinition.Required && (!Object.prototype.hasOwnProperty.call(values, optionDefinition.Name) || !values[optionDefinition.Name])) {
-      throw new Error(`${fieldName} field is required`)
-    }
-  })
-}
-
-/**
- * Update existing bookmark's fields
- */
-function updateBookmarkFields(bookmarkName: string, providerObject: Provider, values: Record<string, unknown>, oldValues?: Record<string, unknown>): void {
-  const valuesPlain: Record<string, string> = {}
-
-  providerObject.Options.forEach((optionDefinition) => {
-    const hasSubmittedValue = Object.prototype.hasOwnProperty.call(values, optionDefinition.Name)
-    if (!hasSubmittedValue && !isProviderOptionActive(optionDefinition, values)) {
-      return
-    }
-
-    if (optionDefinition.$Type === 'password') {
-      const newValue = toRcloneOptionValue(values[optionDefinition.Name])
-      const oldValue = toRcloneOptionValue(oldValues?.[optionDefinition.Name])
-      if (!oldValues || oldValue !== newValue) {
-        doCommandSync(['config', 'password', bookmarkName, optionDefinition.Name, newValue])
-      }
-    } else {
-      if (optionDefinition.$Type === 'boolean') {
-        if (optionDefinition.Name in values && ['true', 'yes', true, 1].includes(values[optionDefinition.Name] as unknown as string | number | boolean)) {
-          valuesPlain[optionDefinition.Name] = 'true'
-        } else {
-          valuesPlain[optionDefinition.Name] = 'false'
-        }
-      } else if (hasSubmittedValue) {
-        valuesPlain[optionDefinition.Name] = toRcloneOptionValue(values[optionDefinition.Name])
-      }
-    }
-  })
-
-  try {
-    mergeBookmarkConfig(getConfigFile(), bookmarkName, valuesPlain)
-  } catch (err) {
-    console.error(err)
-    throw new Error('Cannot update bookmark fields.')
+function configErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof ConfigEditError) {
+    return error.message
   }
-  console.log('Rclone', 'Updated bookmark', bookmarkName)
+  if (error instanceof Error && error.message) {
+    return error.message
+  }
+  return fallback
 }
 
 /**
@@ -886,40 +1213,38 @@ function updateBookmarkFields(bookmarkName: string, providerObject: Provider, va
  */
 export async function addBookmark(type: string, bookmarkName: string, values: Record<string, unknown>): Promise<void> {
   const providerObject = getProvider(type)
-  const configFile = getConfigFile()
-
-  if (!/^([a-zA-Z0-9\-_]{1,32})$/.test(bookmarkName)) {
-    throw new Error('Invalid name.\nName should be 1-32 chars long, and should contain only letters, digits - and _')
-  }
-
+  assertNewRemoteName(bookmarkName)
   validateBookmarkOptions(providerObject, values)
 
-  if (Object.prototype.hasOwnProperty.call(Cache.bookmarks, bookmarkName)) {
-    throw new Error(`There "${bookmarkName}" bookmark already`)
+  if (createsInFlight.has(bookmarkName)) {
+    throw new Error(`Remote "${bookmarkName}" is already being created.`)
   }
-
+  createsInFlight.add(bookmarkName)
+  const configFile = getConfigFile()
+  let wrote = false
   try {
-    const iniBlock = `\n[${bookmarkName}]\nconfig_automatic = no\ntype = ${type}\n`
-    fs.appendFileSync(configFile, iniBlock)
-    console.log('Rclone', 'Creating new bookmark', bookmarkName)
-  } catch (err) {
-    console.error(err)
-    throw new Error('Cannot create new bookmark')
-  }
-
-  try {
-    updateBookmarkFields(bookmarkName, providerObject, values)
+    const fields = selectConfigFields(providerObject.Options, values, 'create')
+    await obscurePasswordFields(fields)
+    await createRemote(configFile, bookmarkName, providerObject.Prefix, fields)
+    wrote = true
     await updateBookmarksCache()
     dialogs.notification(`Bookmark ${bookmarkName} is created`)
-  } catch (err) {
-    console.error('Rclone', 'Reverting bookmark because of a problem', bookmarkName, err)
-    try {
-      await doCommand(['config', 'delete', bookmarkName])
-      await updateBookmarksCache()
-    } catch (rollbackError) {
-      console.error('Rclone', 'Cannot rollback failed bookmark creation:', rollbackError)
+    if (providerNeedsOAuth(providerObject.Options)) {
+      reconnectRemote(bookmarkName)
     }
-    throw new Error('Cannot write bookmark options to config.')
+  } catch (err) {
+    if (wrote) {
+      try {
+        await rollbackCreatedRemote(configFile, bookmarkName)
+        await updateBookmarksCache()
+      } catch (rollbackError) {
+        console.error('Rclone', 'Cannot rollback failed bookmark creation:', rollbackError)
+      }
+    }
+    console.error('Rclone', 'Cannot create bookmark', bookmarkName, err)
+    throw new Error(configErrorMessage(err, 'Cannot write bookmark options to config.'))
+  } finally {
+    createsInFlight.delete(bookmarkName)
   }
 }
 
@@ -929,11 +1254,28 @@ export async function addBookmark(type: string, bookmarkName: string, values: Re
 export async function updateBookmark(bookmark: Bookmark | string, values: Record<string, unknown>): Promise<void> {
   const bm = getBookmark(bookmark)
   const providerObject = getProvider(bm.type)
-  validateBookmarkOptions(providerObject, values)
-
-  updateBookmarkFields(bm.$name, providerObject, values, bm as unknown as Record<string, unknown>)
-  await updateBookmarksCache()
-  dialogs.notification(`Bookmark ${bm.$name} is updated.`)
+  validateBookmarkOptions(providerObject, values, bm as unknown as Record<string, unknown>)
+  const configFile = getConfigFile()
+  const fields = selectConfigFields(providerObject.Options, values, 'update', bm as unknown as Record<string, unknown>)
+  await obscurePasswordFields(fields)
+  const watchedChange = changesAutoUploadTarget(fields, bm as unknown as Record<string, unknown>)
+  try {
+    const changed = await updateRemote(configFile, bm.$name, fields)
+    if (changed) {
+      const wasWatching = Object.prototype.hasOwnProperty.call(AutomaticUploadRegistry, bm.$name)
+      try {
+        await updateBookmarksCache()
+      } finally {
+        if (wasWatching && watchedChange) {
+          restartAutomaticUpload(bm.$name)
+        }
+      }
+    }
+    dialogs.notification(`Bookmark ${bm.$name} is updated.`)
+  } catch (err) {
+    console.error('Rclone', 'Cannot update bookmark', bm.$name, err)
+    throw new Error(configErrorMessage(err, 'Cannot update bookmark fields.'))
+  }
 }
 
 /**
@@ -941,7 +1283,8 @@ export async function updateBookmark(bookmark: Bookmark | string, values: Record
  */
 export async function deleteBookmark(bookmark: Bookmark | string): Promise<void> {
   const bm = getBookmark(bookmark)
-  await doCommand(['config', 'delete', bm.$name])
+  await deleteRemote(getConfigFile(), bm.$name)
+  stopAutomaticUpload(bm.$name)
   BookmarkProcessManager.killAll(bm.$name)
   await updateBookmarksCache()
   dialogs.notification(`Bookmark ${bm.$name} is deleted.`)
@@ -951,7 +1294,21 @@ export async function deleteBookmark(bookmark: Bookmark | string): Promise<void>
  * Get bookmark remote with root
  */
 function getBookmarkRemoteWithRoot(bookmark: Bookmark): string {
-  return bookmark.$name + ':' + (bookmark._rclonetray_remote_path || '/')
+  return remotePathSpec(bookmark.$name, bookmark._rclonetray_remote_path)
+}
+
+function assertBucketPath(bookmark: Bookmark): void {
+  const provider = (() => {
+    try {
+      return getProvider(bookmark.type)
+    } catch {
+      return null
+    }
+  })()
+  const bucketBased = isBucketBasedPrefix(bookmark.type) || isBucketBasedPrefix(provider?.Prefix)
+  if (bucketBased && !bookmark._rclonetray_remote_path) {
+    throw new Error(`Set a bucket or path for ${bookmark.$name} before uploading or downloading. Syncing the account root can delete every container.`)
+  }
 }
 
 /**
@@ -976,6 +1333,9 @@ export function buildMountArgs(remoteWithRoot: string, mountpoint: string, volna
   if (vfsCacheMode && vfsCacheMode !== 'off') {
     args.push('--vfs-cache-mode', vfsCacheMode)
   }
+  if (settings.get('rclone_mount_network_mode') && process.platform === 'win32') {
+    args.push('--network-mode')
+  }
 
   return args
 }
@@ -985,7 +1345,7 @@ export function buildMountArgs(remoteWithRoot: string, mountpoint: string, volna
  * Includes cache and authentication flags based on current settings.
  * Extracted as a pure-ish function for testability.
  */
-export function buildServeCommand(protocol: ServeProtocol, remoteWithRoot: string): string[] {
+export function buildServeCommand(protocol: ServeProtocol, remoteWithRoot: string, addr?: string): string[] {
   const command = [
     'serve',
     protocol,
@@ -993,70 +1353,95 @@ export function buildServeCommand(protocol: ServeProtocol, remoteWithRoot: strin
     '-vv'
   ]
 
+  if (addr) {
+    command.push('--addr', addr)
+  }
+
   if (protocol !== 'restic') {
-    if (protocol !== 'webdav') {
-      command.push('--attr-timeout', Math.max(1, parseInt(String(settings.get('rclone_cache_files')))) + 's')
-    }
     command.push('--dir-cache-time', Math.max(1, parseInt(String(settings.get('rclone_cache_directories')))) + 's')
   }
-
-  const servingUsername = settings.get('rclone_serving_username')
-  const servingPassword = settings.get('rclone_serving_password')
-
-  if (servingUsername) {
-    command.push('--user', servingUsername)
+  if (settings.get('rclone_serve_read_only') && protocol === 'restic') {
+    command.push('--append-only')
   }
-  if (servingPassword) {
-    command.push('--pass', servingPassword)
+  if (settings.get('rclone_serve_read_only') && protocol !== 'restic') {
+    command.push('--read-only')
   }
 
   return command
 }
 
 /**
- * Free directory that we use for mountpoints
+ * Credentials go in the environment so they are not in argv or the startup line.
+ * A password without a username is rejected: rclone ignores it for HTTP, WebDAV and Restic.
  */
-function freeMountpointDirectory(directoryPath: string): boolean {
-  if (fs.existsSync(directoryPath)) {
-    fs.readdir(directoryPath, (err, files) => {
-      if (err) {
-        throw err
-      }
-      if (!files.length) {
-        fs.rmdirSync(directoryPath)
-      }
-    })
+export function serveAuthEnv(username: string, password: string): { RCLONE_USER: string; RCLONE_PASS: string } | null {
+  if (password && !username) {
+    throw new Error('Set a serving username as well as a password. A password alone leaves the server open.')
   }
-  return true
+  if (!username && !password) {
+    return null
+  }
+  return { RCLONE_USER: username, RCLONE_PASS: password }
 }
 
 /**
- * On windows find free drive letter.
+ * Free directory that we use for mountpoints
  */
-function win32GetFreeLetter(): string {
-  const allLetters = ['E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']
-  // `wmic` is deprecated/removed on recent Windows; use PowerShell instead.
-  const usedDriveLettersOutput = execFileSync('powershell.exe', [
-    '-NoProfile',
-    '-NonInteractive',
-    '-Command',
-    '(Get-PSDrive -PSProvider FileSystem).Name'
-  ])
-  const usedDriveLetters = usedDriveLettersOutput.toString()
-    .split(/\r?\n/)
-    .map((line) => {
-      const letter = line.trim().match(/^([A-Za-z])$/)
-      return letter ? letter[1].toUpperCase() : null
-    })
-    .filter((letter): letter is string => !!letter)
+function freeMountpointDirectory(directoryPath: string): void {
+  fs.readdir(directoryPath, (err, files) => {
+    if (err || files.length) {
+      return
+    }
+    fs.rmdir(directoryPath, () => undefined)
+  })
+}
 
-  const freeLetter = allLetters.find((letter) => usedDriveLetters.indexOf(letter) === -1)
-
-  if (!freeLetter) {
-    throw new Error('Not available free drive letter')
+function recoverStaleMount(mountpoint: string): void {
+  if (process.platform === 'win32' || mountpoint === '*') {
+    return
   }
+  try {
+    const stat = fs.lstatSync(mountpoint)
+    if (stat.isDirectory()) {
+      const entries = fs.readdirSync(mountpoint)
+      if (entries.length === 0) {
+        return
+      }
+    }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code !== 'ENOTCONN' && code !== 'EIO') {
+      return
+    }
+    spawnSync('fusermount', ['-u', mountpoint], { windowsHide: true })
+    spawnSync('fusermount3', ['-u', mountpoint], { windowsHide: true })
+    try {
+      fs.rmdirSync(mountpoint)
+    } catch {
+      // The next mount attempt reports a real error if it is still busy.
+    }
+  }
+}
 
-  return freeLetter + ':'
+export function mountDriverProblem(): { message: string; url: string } | null {
+  if (process.platform === 'win32') {
+    const candidates = [
+      'C:\\Program Files\\WinFsp\\bin\\winfsp-x64.dll',
+      'C:\\Program Files (x86)\\WinFsp\\bin\\winfsp-x64.dll',
+      'C:\\Program Files\\WinFsp\\bin\\winfsp-a64.dll'
+    ]
+    if (!candidates.some((candidate) => fs.existsSync(candidate))) {
+      return { message: 'Mounting on Windows needs WinFsp.', url: 'https://winfsp.dev/rel/' }
+    }
+  } else if (process.platform === 'darwin') {
+    const fuse = ['/Library/Filesystems/macfuse.fs', '/Library/Filesystems/fuse-t.fs'].some((candidate) => fs.existsSync(candidate))
+    if (!fuse) {
+      return { message: 'Mounting on macOS needs macFUSE or FUSE-T.', url: 'https://osxfuse.github.io/' }
+    }
+  } else if (!resolveOnPath('fusermount').includes(path.sep) && !resolveOnPath('fusermount3').includes(path.sep)) {
+    return { message: 'Mounting on Linux needs fusermount.', url: 'https://github.com/libfuse/libfuse' }
+  }
+  return null
 }
 
 /**
@@ -1069,44 +1454,101 @@ export function mount(bookmark: Bookmark | string): void {
   if (proc.exists()) {
     throw new Error(`Bookmark ${bm.$name} already mounted.`)
   }
+  if (quitting) {
+    return
+  }
+
+  const driver = mountDriverProblem()
+  if (driver) {
+    throw new Error(`${driver.message} Install it from ${driver.url}`)
+  }
+
+  if (process.platform === 'win32' && windowsMountStarting()) {
+    if (!pendingWindowsMounts.includes(bm.$name)) {
+      pendingWindowsMounts.push(bm.$name)
+    }
+    fireRcloneUpdateActions()
+    return
+  }
 
   let mountpoint: string
   if (process.platform === 'win32') {
-    mountpoint = win32GetFreeLetter()
+    // Let WinFsp choose a free letter. Picking one ourselves races when two mounts start together.
+    mountpoint = '*'
   } else if (process.platform === 'linux') {
     mountpoint = path.join(os.homedir(), `mount.${bm.type}.${bm.$name}`)
   } else {
     mountpoint = path.join('/', 'Volumes', `${bm.type}.${bm.$name}`)
   }
 
+  if (process.platform !== 'win32') {
+    recoverStaleMount(mountpoint)
+  }
   const mountpointDirectoryExists = fs.existsSync(mountpoint)
-  if (!mountpoint || (mountpointDirectoryExists && fs.readdirSync(mountpoint).length > 0)) {
+  let mountpointBusy = false
+  if (mountpointDirectoryExists && mountpoint !== '*') {
+    try {
+      mountpointBusy = fs.readdirSync(mountpoint).length > 0
+    } catch {
+      recoverStaleMount(mountpoint)
+      mountpointBusy = fs.existsSync(mountpoint)
+    }
+  }
+  if (!mountpoint || mountpointBusy) {
     throw new Error(`Destination mountpoint "${mountpoint}" is not free.`)
   }
   if (process.platform === 'linux' && !mountpointDirectoryExists) {
     fs.mkdirSync(mountpoint)
   }
 
-  proc.create(buildMountArgs(getBookmarkRemoteWithRoot(bm), mountpoint, bm.$name))
+  const mountArgs = buildMountArgs(getBookmarkRemoteWithRoot(bm), mountpoint, bm.$name)
+  if (bm._rclonetray_vfs_cache_mode && bm._rclonetray_vfs_cache_mode !== 'default') {
+    mountArgs.push('--vfs-cache-mode', bm._rclonetray_vfs_cache_mode)
+  }
+  if (bm._rclonetray_mount_read_only === 'true') {
+    mountArgs.push('--read-only')
+  }
+  if (bm._rclonetray_vfs_cache_max_size) {
+    mountArgs.push('--vfs-cache-max-size', bm._rclonetray_vfs_cache_max_size)
+  }
+  proc.create(mountArgs)
   proc.set('mountpoint', mountpoint)
 
   if (process.platform === 'linux') {
     proc.getProcess().on('close', () => {
       freeMountpointDirectory(mountpoint)
-      if (fs.existsSync(mountpoint)) {
-        fs.readdir(mountpoint, (err, files) => {
-          if (err) {
-            throw err
-          }
-          if (!files.length) {
-            fs.rmdir(mountpoint, () => { })
-          }
-        })
-      }
     })
   }
 
   fireRcloneUpdateActions()
+}
+
+function windowsMountStarting(): boolean {
+  return Object.values(BookmarkProcessRegistry).some((entry) => entry.processName === 'mount' && !entry.data.OK)
+}
+
+function startNextWindowsMount(): void {
+  if (process.platform !== 'win32' || quitting) {
+    pendingWindowsMounts.length = 0
+    return
+  }
+  while (pendingWindowsMounts.length && !windowsMountStarting()) {
+    const name = pendingWindowsMounts.shift() as string
+    if (!Cache.bookmarks[name] || new BookmarkProcessManager('mount', name).exists()) {
+      continue
+    }
+    try {
+      mount(name)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      dialogs.notification(`Could not mount ${name}: ${message}`, 'error')
+    }
+  }
+}
+
+export function isMountPending(bookmark: Bookmark | string): boolean {
+  const bm = getBookmark(bookmark)
+  return pendingWindowsMounts.includes(bm.$name)
 }
 
 /**
@@ -1116,10 +1558,7 @@ export function getMountStatus(bookmark: Bookmark | string): string | false {
   const bm = getBookmark(bookmark)
   const proc = new BookmarkProcessManager('mount', bm.$name)
   if (proc.exists()) {
-    const mountpoint = proc.get('mountpoint')
-    if (mountpoint && fs.existsSync(mountpoint)) {
-      return mountpoint
-    }
+    return proc.get('mountpoint') || ''
   }
   return false
 }
@@ -1154,15 +1593,15 @@ export function openMountPoint(bookmark: Bookmark | string): void {
 /**
  * Perform download task
  */
-export function download(bookmark: Bookmark | string): void {
-  sync('download', getBookmark(bookmark))
+export function download(bookmark: Bookmark | string): Promise<void> {
+  return sync('download', getBookmark(bookmark))
 }
 
 /**
  * Perform upload task
  */
-export function upload(bookmark: Bookmark | string): void {
-  sync('upload', getBookmark(bookmark))
+export function upload(bookmark: Bookmark | string): Promise<void> {
+  return sync('upload', getBookmark(bookmark))
 }
 
 /**
@@ -1205,6 +1644,168 @@ export function isAutomaticUpload(bookmark: Bookmark | string): boolean {
   return Object.prototype.hasOwnProperty.call(AutomaticUploadRegistry, bm.$name)
 }
 
+function stopAutomaticUpload(name: string): void {
+  const entry = AutomaticUploadRegistry[name]
+  if (!entry) {
+    return
+  }
+  if (entry.timer) {
+    clearTimeout(entry.timer)
+  }
+  try {
+    entry.watcher?.close()
+  } catch (error) {
+    console.error('Rclone', 'Cannot close automatic upload watcher:', error)
+  }
+  delete AutomaticUploadRegistry[name]
+}
+
+function restartAutomaticUpload(name: string): void {
+  stopAutomaticUpload(name)
+  const bookmark = Cache.bookmarks[name]
+  const localPath = bookmark ? bookmark._rclonetray_local_path_map : ''
+  if (localPath) {
+    try {
+      const localPathError = getSyncLocalPathError(localPath)
+      if (localPathError) {
+        throw new Error(localPathError)
+      }
+      if (!fs.statSync(localPath).isDirectory()) {
+        throw new Error(`Local path is not a directory: ${localPath}`)
+      }
+      startAutomaticUpload(bookmark)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      dialogs.notification(`Automatic upload stopped for ${name}: ${message}`)
+    }
+  }
+  rememberAutomaticUploads()
+  fireRcloneUpdateActions()
+}
+
+function scheduleAutomaticUpload(name: string): void {
+  const entry = AutomaticUploadRegistry[name]
+  const bookmark = Cache.bookmarks[name]
+  if (!entry || !bookmark) {
+    return
+  }
+  if (new BookmarkProcessManager('upload', name).exists()) {
+    entry.dirty = true
+    return
+  }
+  const delayMs = (parseInt(String(settings.get('rclone_sync_autoupload_delay'))) || 5) * 1000
+  const now = Date.now()
+  if (!entry.firstEventAt) {
+    entry.firstEventAt = now
+  }
+  const wait = automaticUploadDelay(entry.firstEventAt, now, delayMs, Math.max(delayMs * 10, 60000))
+  if (entry.timer) {
+    clearTimeout(entry.timer)
+  }
+  entry.timer = setTimeout(() => {
+    const current = AutomaticUploadRegistry[name]
+    if (!current || quitting) {
+      return
+    }
+    current.timer = null
+    current.firstEventAt = null
+    if (new BookmarkProcessManager('upload', name).exists()) {
+      current.dirty = true
+      return
+    }
+    void sync('upload', getBookmark(name), { skipConfirm: true }).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error)
+      if (/already such process|already running/i.test(message)) {
+        current.dirty = true
+        return
+      }
+      if (/Nothing to upload/i.test(message)) {
+        return
+      }
+      dialogs.notification(`Automatic upload failed for ${name}: ${message}`, 'error')
+      console.error('Rclone', 'Automatic upload failed:', error)
+    })
+  }, wait)
+}
+
+function watchAutomaticUpload(name: string, directory: string): { close: () => void } {
+  const onChange = (filename?: string | null): void => {
+    if (filename && AUTO_UPLOAD_IGNORED.test(filename)) {
+      return
+    }
+    if (!AutomaticUploadRegistry[name]) {
+      return
+    }
+    scheduleAutomaticUpload(name)
+  }
+  const onError = (error: Error): void => {
+    dialogs.notification(`Automatic upload stopped for ${name}: ${error.message}`)
+    stopAutomaticUpload(name)
+    fireRcloneUpdateActions()
+  }
+  if (process.platform === 'win32' || process.platform === 'darwin') {
+    const watcher = fs.watch(directory, { recursive: true }, (_event, filename) => onChange(filename))
+    watcher.on('error', onError)
+    return { close: () => watcher.close() }
+  }
+  const watcher = chokidar.watch(directory, {
+    ignoreInitial: true,
+    followSymlinks: false,
+    ignored: AUTO_UPLOAD_IGNORED,
+    atomic: true
+  })
+  watcher.on('error', (error: unknown) => onError(error instanceof Error ? error : new Error(String(error))))
+  watcher.on('add', (filePath) => onChange(filePath))
+  watcher.on('change', (filePath) => onChange(filePath))
+  watcher.on('unlink', (filePath) => onChange(filePath))
+  return { close: () => { void watcher.close() } }
+}
+
+function rememberAutomaticUploads(): void {
+  settings.set('rclone_autoupload_names', Object.keys(AutomaticUploadRegistry).join('\n'))
+}
+
+let autoMountsArmed = false
+let savedUploadsArmed = false
+
+function armAutoMounts(): void {
+  if (autoMountsArmed) {
+    return
+  }
+  autoMountsArmed = true
+  Object.values(Cache.bookmarks).forEach((bookmark) => {
+    if (bookmark._rclonetray_auto_mount === 'true' && bookmark.$limited !== '1' && bookmark.$broken !== '1') {
+      try {
+        mount(bookmark)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        dialogs.notification(`Could not mount ${bookmark.$name} at launch: ${message}`, 'error')
+      }
+    }
+  })
+}
+
+function armSavedAutomaticUploads(): void {
+  if (savedUploadsArmed) {
+    return
+  }
+  savedUploadsArmed = true
+  const names = String(settings.get('rclone_autoupload_names') || '').split(/\n/).map((name) => name.trim()).filter(Boolean)
+  names.forEach((name) => {
+    const bookmark = Cache.bookmarks[name]
+    if (bookmark && !AutomaticUploadRegistry[name]) {
+      try {
+        startAutomaticUpload(bookmark)
+        scheduleAutomaticUpload(name)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        dialogs.notification(`Automatic upload for ${name} is off: ${message}`, 'error')
+        console.error('Rclone', 'Cannot restore automatic upload:', error)
+      }
+    }
+  })
+}
+
 /**
  * Toggle automatic upload for bookmark
  */
@@ -1212,52 +1813,65 @@ export function toggleAutomaticUpload(bookmark: Bookmark | string): void {
   const bm = getBookmark(bookmark)
 
   if (Object.prototype.hasOwnProperty.call(AutomaticUploadRegistry, bm.$name)) {
-    if (AutomaticUploadRegistry[bm.$name].timer) {
-      clearTimeout(AutomaticUploadRegistry[bm.$name].timer as NodeJS.Timeout)
-    }
-    AutomaticUploadRegistry[bm.$name].watcher?.close()
-    delete AutomaticUploadRegistry[bm.$name]
+    stopAutomaticUpload(bm.$name)
   } else if (bm._rclonetray_local_path_map) {
-    const localPathError = getSyncLocalPathError(bm._rclonetray_local_path_map)
+    const localPath = bm._rclonetray_local_path_map
+    const localPathError = getSyncLocalPathError(localPath)
     if (localPathError) {
       throw new Error(localPathError)
     }
-    if (!dialogs.confirmAutomaticUpload(bm.$name, bm._rclonetray_local_path_map, getBookmarkRemoteWithRoot(bm))) {
-      return
+    let stat: fs.Stats
+    try {
+      stat = fs.statSync(localPath)
+    } catch {
+      throw new Error(`Local path does not exist: ${localPath}`)
     }
-    AutomaticUploadRegistry[bm.$name] = {
-      watcher: null,
-      timer: null
+    if (!stat.isDirectory()) {
+      throw new Error(`Local path is not a directory: ${localPath}`)
     }
-
-    AutomaticUploadRegistry[bm.$name].watcher = chokidar.watch(bm._rclonetray_local_path_map, {
-      ignoreInitial: true,
-      disableGlobbing: true,
-      usePolling: false,
-      useFsEvents: true,
-      persistent: true,
-      alwaysStat: true,
-      atomic: true
-    })
-
-    AutomaticUploadRegistry[bm.$name].watcher!.on('raw', () => {
-      if (AutomaticUploadRegistry[bm.$name].timer) {
-        clearTimeout(AutomaticUploadRegistry[bm.$name].timer as NodeJS.Timeout)
+    void dialogs.confirmAutomaticUploadAsync(bm.$name, localPath, getBookmarkRemoteWithRoot(bm)).then((accepted) => {
+      if (accepted) {
+        startAutomaticUpload(bm)
+        rememberAutomaticUploads()
       }
-      const delaySeconds = parseInt(String(settings.get('rclone_sync_autoupload_delay'))) || 5
-      AutomaticUploadRegistry[bm.$name].timer = setTimeout(() => {
-        try {
-          sync('upload', bm, { skipConfirm: true })
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error)
-          dialogs.notification(`Automatic upload failed for ${bm.$name}: ${message}`)
-          console.error('Rclone', 'Automatic upload failed:', error)
-        }
-      }, delaySeconds * 1000)
-    })
+    }).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error)
+      dialogs.notification(`Could not turn on automatic upload for ${bm.$name}: ${message}`, 'error')
+    }).finally(() => fireRcloneUpdateActions())
+    return
   }
 
+  rememberAutomaticUploads()
   fireRcloneUpdateActions()
+}
+
+function startAutomaticUpload(bm: Bookmark): void {
+  if (AutomaticUploadRegistry[bm.$name] || !bm._rclonetray_local_path_map) {
+    return
+  }
+  const localPath = bm._rclonetray_local_path_map
+  let stat: fs.Stats
+  try {
+    stat = fs.statSync(localPath)
+  } catch {
+    throw new Error(`Local path does not exist: ${localPath}`)
+  }
+  if (!stat.isDirectory()) {
+    throw new Error(`Local path is not a directory: ${localPath}`)
+  }
+  const entry: AutoUploadRegistryType[string] = {
+    watcher: null,
+    timer: null,
+    dirty: false,
+    firstEventAt: null
+  }
+  AutomaticUploadRegistry[bm.$name] = entry
+  try {
+    entry.watcher = watchAutomaticUpload(bm.$name, localPath)
+  } catch (error) {
+    delete AutomaticUploadRegistry[bm.$name]
+    throw error
+  }
 }
 
 /**
@@ -1266,8 +1880,19 @@ export function toggleAutomaticUpload(bookmark: Bookmark | string): void {
 export function openLocal(bookmark: Bookmark | string): boolean | void {
   const bm = getBookmark(bookmark)
   if (bm._rclonetray_local_path_map) {
-    if (fs.existsSync(bm._rclonetray_local_path_map)) {
-      void shell.openPath(bm._rclonetray_local_path_map).then((error) => {
+    const localPath = bm._rclonetray_local_path_map
+    if (fs.existsSync(localPath)) {
+      let directory = false
+      try {
+        directory = fs.statSync(localPath).isDirectory()
+      } catch {
+        directory = false
+      }
+      if (!directory) {
+        shell.showItemInFolder(localPath)
+        return true
+      }
+      void shell.openPath(localPath).then((error) => {
         if (error) {
           console.error('Cannot open local path:', error)
         }
@@ -1308,9 +1933,32 @@ export function getAvailableServeProtocols(): ServeProtocols {
   return protocols
 }
 
+function serveProtocolLabel(protocol: ServeProtocol): string {
+  const labels: Record<string, string> = { http: 'HTTP', ftp: 'FTP', webdav: 'WebDAV', restic: 'Restic' }
+  return labels[protocol] || String(protocol).toUpperCase()
+}
+
 /**
  * Start serving protocol+bookmark
  */
+function allocateLocalPort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer()
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address()
+      const port = typeof address === 'object' && address ? address.port : 0
+      server.close((closeError) => {
+        if (closeError || !port) {
+          reject(closeError || new Error('Could not allocate a port'))
+          return
+        }
+        resolve(port)
+      })
+    })
+  })
+}
+
 export function serveStart(protocol: ServeProtocol, bookmark: Bookmark | string): void {
   if (!Object.prototype.hasOwnProperty.call(getAvailableServeProtocols(), protocol)) {
     throw new Error(`Protocol "${protocol}" is not supported`)
@@ -1323,11 +1971,22 @@ export function serveStart(protocol: ServeProtocol, bookmark: Bookmark | string)
     throw new Error(`${bm.$name} is already serving.`)
   }
 
-  const command = buildServeCommand(protocol, getBookmarkRemoteWithRoot(bm))
-
-  proc.create(command)
-  proc.set('protocol', protocol)
-  fireRcloneUpdateActions()
+  const auth = serveAuthEnv(
+    String(settings.get('rclone_serving_username') || ''),
+    String(settings.get('rclone_serving_password') || '')
+  )
+  void allocateLocalPort().then((port) => {
+    if (proc.exists()) {
+      return
+    }
+    const command = buildServeCommand(protocol, getBookmarkRemoteWithRoot(bm), `127.0.0.1:${port}`)
+    proc.create(command, auth ? { ...process.env, ...auth } : undefined)
+    proc.set('protocol', protocol)
+    fireRcloneUpdateActions()
+  }).catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error)
+    dialogs.notification(`Could not start ${protocol} for ${bm.$name}: ${message}`)
+  })
 }
 
 /**
@@ -1376,6 +2035,10 @@ export function getJobStates() {
   return listJobStates()
 }
 
+export function clearFinishedJobs() {
+  return dropFinishedJobs()
+}
+
 /**
  * Get the full rclone config as JSON
  */
@@ -1384,7 +2047,7 @@ export function getConfig(): Promise<BookmarksCache> {
     .then((output) => {
       try {
         return JSON.parse(output)
-      } catch (err) {
+      } catch {
         throw new Error('Cannot parse rclone config')
       }
     })
@@ -1393,16 +2056,51 @@ export function getConfig(): Promise<BookmarksCache> {
 /**
  * Init Rclone
  */
+export function bookmarkNeedsReconnect(bookmark: Bookmark): boolean {
+  try {
+    return providerNeedsOAuth(getProvider(bookmark.type).Options) && !bookmark.token
+  } catch {
+    return false
+  }
+}
+
+export function reconnectRemote(bookmarkName: string): void {
+  const command = prepareRcloneCommand(['config', 'reconnect', `${bookmarkName}:`])
+  dialogs.notification(`Finish sign-in for ${bookmarkName} in the window that opened.`)
+  if (process.platform === 'win32') {
+    openWindowsConsole('rclone sign-in', command)
+    return
+  }
+  doCommandInTerminal(command)
+}
+
 export function init(): void {
+  sessionUseBundled = settings.get('rclone_use_bundled')
+  powerMonitor.on('shutdown', () => {
+    quitForSessionEnd()
+  })
+  powerMonitor.on('resume', () => {
+    Object.keys(AutomaticUploadRegistry).forEach((name) => {
+      const entry = AutomaticUploadRegistry[name]
+      if (entry) {
+        entry.dirty = true
+        scheduleAutomaticUpload(name)
+      }
+    })
+  })
   if (process.platform === 'linux' || process.platform === 'darwin') {
-    process.env.PATH += ':' + path.join('/', 'usr', 'local', 'bin')
+    process.env.PATH = [process.env.PATH, path.join('/', 'usr', 'local', 'bin')].filter(Boolean).join(':')
   }
 
   try {
     updateVersionCache()
   } catch (err) {
     const choice = dialogs.missingRclone(err)
-    if (choice !== 1) {
+    if (choice === 3) {
+      useSystemRclone()
+    } else if (choice === 1) {
+      sessionUseBundled = true
+    } else {
       return
     }
     bundledRclonePrepared = false
@@ -1431,27 +2129,48 @@ export function init(): void {
     Cache.configFile = output.trim().split(/\r?\n/).pop() || ''
   }
 
-  // Ensure the directory for the config file exists.
-  const configDir = path.dirname(getConfigFile())
-  if (configDir && !fs.existsSync(configDir)) {
-    fs.mkdirSync(configDir, { recursive: true })
+  const ensureConfigLocation = (): void => {
+    const configDir = path.dirname(getConfigFile())
+    if (configDir && !fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir, { recursive: true })
+    }
+    if (!fs.existsSync(getConfigFile())) {
+      fs.writeFileSync(getConfigFile(), '', { mode: 0o600 })
+    }
   }
 
-  if (!fs.existsSync(getConfigFile())) {
-    fs.appendFileSync(getConfigFile(), '')
+  try {
+    ensureConfigLocation()
+  } catch (error) {
+    const saved = Cache.configFile
+    console.error('Rclone config path is not available:', saved, error)
+    try {
+      const output = doCommandSync(['config', 'file'])
+      Cache.configFile = output.trim().split(/\r?\n/).pop() || ''
+      ensureConfigLocation()
+      dialogs.notification(`Saved rclone config path is not available (${saved}). Using ${Cache.configFile} for this session.`)
+    } catch (fallbackError) {
+      console.error('Rclone', 'Cannot fall back to the default config:', fallbackError)
+      dialogs.notification('rclone config path is not available, and the default config could not be opened. Open Preferences after fixing the path.')
+      return
+    }
+  }
+
+  if (isEncryptedRcloneConfig(readConfigText(getConfigFile()))) {
+    dialogs.notification('rclone.conf is encrypted. RcloneTray will not edit it. Decrypt it, or change it with rclone config.')
   }
 
   chokidar.watch(getConfigFile(), {
     ignoreInitial: true,
-    disableGlobbing: true,
     usePolling: false,
-    useFsEvents: true,
     persistent: true,
-    alwaysStat: true,
     atomic: true
   })
     .on('change', () => {
       void updateBookmarksCache().catch(() => undefined)
+    })
+    .on('error', (error: unknown) => {
+      console.error('Rclone', 'Config file watcher failed:', error)
     })
 
   void updateProvidersCache().catch(() => undefined)
@@ -1461,17 +2180,133 @@ export function init(): void {
 /**
  * Prepare app to quit, show dialog if there is running processes
  */
-export function prepareQuit(event: Electron.Event): void {
-  if (BookmarkProcessManager.getActiveProcessesCount() < 1) {
-    return
-  }
+let allowQuit = false
+let quitPromptOpen = false
+let relaunchOnQuit = false
 
-  if (!dialogs.confirmExit()) {
-    event.preventDefault()
-    return
-  }
+let relaunchExecPath = ''
 
+export function requestRelaunch(): void {
+  relaunchOnQuit = true
+  if (process.platform === 'linux' && process.env.APPIMAGE) {
+    relaunchExecPath = process.env.APPIMAGE
+  }
+  app.quit()
+}
+
+export function stopAllProcesses(): void {
+  pendingWindowsMounts.length = 0
+  cancelActivePreview()
   BookmarkProcessManager.killAll()
+}
+
+export function hasRunningWork(): boolean {
+  return BookmarkProcessManager.getActiveProcessesCount() > 0 || activePreviews.size > 0 || pendingWindowsMounts.length > 0
+}
+
+export function stopJob(id: string): void {
+  if (cancelPreview(id)) {
+    return
+  }
+  const entry = BookmarkProcessRegistry[id]
+  if (!entry) {
+    throw new Error('That job is not running.')
+  }
+  try {
+    new BookmarkProcessManager(entry.processName, entry.bookmarkName).kill()
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(message)
+  }
+}
+
+export async function testRemoteConnection(bookmarkName: string): Promise<string> {
+  const bookmark = getBookmark(bookmarkName)
+  const result = await collectCommand(['lsf', getBookmarkRemoteWithRoot(bookmark), '--max-depth', '1'], 20000, {
+    key: `${bookmark.$name}:connection-test`,
+    bookmarkName: bookmark.$name
+  })
+  if (result.timedOut) {
+    throw new Error('Connection test timed out.')
+  }
+  if (!result.ok) {
+    throw new Error(result.text.trim() || 'Connection test failed.')
+  }
+  const lines = result.text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(0, 20)
+  return lines.length ? `Connected. First entries:\n${lines.join('\n')}` : 'Connected. The remote path is empty.'
+}
+
+function relaunchIfRequested(): void {
+  if (relaunchOnQuit) {
+    relaunchOnQuit = false
+    app.relaunch(relaunchExecPath ? { execPath: relaunchExecPath } : undefined)
+  }
+}
+
+function stopEverythingAndQuit(): void {
+  quitting = true
+  pendingWindowsMounts.length = 0
+  Object.keys(AutomaticUploadRegistry).forEach((name) => {
+    const entry = AutomaticUploadRegistry[name]
+    if (entry?.timer) {
+      clearTimeout(entry.timer)
+      entry.timer = null
+    }
+  })
+  cancelActivePreview()
+  BookmarkProcessManager.killAll()
+  const deadline = Date.now() + 4000
+  const waitForChildren = (): void => {
+    if (BookmarkProcessManager.getActiveProcessesCount() > 0 && Date.now() < deadline) {
+      setTimeout(waitForChildren, 100)
+      return
+    }
+    BookmarkProcessManager.killAll(undefined, 'SIGKILL')
+    allowQuit = true
+    relaunchIfRequested()
+    app.quit()
+  }
+  waitForChildren()
+}
+
+/**
+ * The OS is logging out or shutting down: never hold it up with a prompt.
+ */
+export function quitForSessionEnd(): void {
+  quitting = true
+  allowQuit = true
+  pendingWindowsMounts.length = 0
+  cancelActivePreview()
+  BookmarkProcessManager.killAll()
+}
+
+export function prepareQuit(event: Electron.Event): void {
+  if (allowQuit) {
+    relaunchIfRequested()
+    return
+  }
+  if (!hasRunningWork()) {
+    quitting = true
+    cancelActivePreview()
+    relaunchIfRequested()
+    return
+  }
+  event.preventDefault()
+  if (quitPromptOpen || quitting) {
+    return
+  }
+  quitPromptOpen = true
+  void dialogs.confirmExitAsync().then((confirmed) => {
+    quitPromptOpen = false
+    if (!confirmed) {
+      relaunchOnQuit = false
+      return
+    }
+    stopEverythingAndQuit()
+  }).catch((error: unknown) => {
+    quitPromptOpen = false
+    console.error('Quit confirmation failed:', error)
+  })
 }
 
 export default {
