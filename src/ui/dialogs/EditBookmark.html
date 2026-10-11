@@ -70,6 +70,7 @@
           const data = window.electronAPI.getTheFormData(this);
           try {
             await $main.rclone.updateBookmark(props.$name, data.options || {});
+            window.electronAPI.markClean();
             window.close();
           } catch (error) {
             if (saveButton) saveButton.disabled = false;
@@ -96,6 +97,7 @@
           if (!confirmed) return;
           try {
             await $main.rclone.delBookmark(props.$name);
+            window.electronAPI.markClean();
             window.close();
           } catch (error) {
             window.electronAPI.errorBox(error.message || String(error));

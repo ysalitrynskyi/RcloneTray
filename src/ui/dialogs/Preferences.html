@@ -560,8 +560,10 @@
           });
         });
 
+        window.electronAPI.trackForm(formEl);
+
         // Cancel button closes the window
-        document.getElementById('btn-cancel')?.addEventListener('click', () => window.close());
+        document.getElementById('btn-cancel')?.addEventListener('click', () => { window.electronAPI.markClean(); window.close(); });
 
         // Browse config file
         document.getElementById('browse-config')?.addEventListener('click', async function() {
@@ -608,6 +610,7 @@
             if (requiresRestart) {
               window.htmlElements.checkForRequiredRestart();
             }
+            window.electronAPI.markClean();
             window.close();
           } catch (error) {
             window.electronAPI.errorBox(error.message || String(error));
