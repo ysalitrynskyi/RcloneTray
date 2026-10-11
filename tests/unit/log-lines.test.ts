@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extractServeUrl, isFatalLog, parseLogLine, redactSecrets } from '../../src/rclone/log-lines'
+import { extractServeUrl, isFatalLog, parseLogLine, progressFromLog, redactSecrets } from '../../src/rclone/log-lines'
 import { sanitizeCustomArgs, splitCommandArgs } from '../../src/rclone/custom-args'
 
 describe('rclone log lines', () => {
@@ -26,6 +26,12 @@ describe('rclone log lines', () => {
     expect(extractServeUrl('Serving restic REST API on [http://127.0.0.1:1/]')).toBe('http://127.0.0.1:1/')
     expect(extractServeUrl('Serving FTP on 127.0.0.1:2121')).toBe('ftp://127.0.0.1:2121')
     expect(extractServeUrl('Serving on http://127.0.0.1:8080/')).toBe('http://127.0.0.1:8080/')
+  })
+
+  it('reads transfer progress from a stats line', () => {
+    const line = JSON.stringify({ stats: { bytes: 1048576, totalBytes: 2097152, speed: 1024, errors: 0 } })
+    expect(progressFromLog(line)).toContain('1.0 MiB')
+    expect(progressFromLog('not json')).toBeNull()
   })
 
   it('redacts a serving password', () => {

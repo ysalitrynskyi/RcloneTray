@@ -13,6 +13,7 @@ export interface JobState {
   pid?: number
   uri?: string
   message?: string
+  progress?: string
   logTail: string[]
 }
 
@@ -63,6 +64,15 @@ export function finishJob(id: string, status: Exclude<JobStatus, 'pending' | 'ru
 
 export function getJobStates(): JobState[] {
   return Object.values(jobs).sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+}
+
+export function clearFinishedJobs(): JobState[] {
+  Object.values(jobs).forEach((job) => {
+    if (job.status !== 'running' && job.status !== 'pending') {
+      delete jobs[job.id]
+    }
+  })
+  return getJobStates()
 }
 
 export function resetJobStates(): void {

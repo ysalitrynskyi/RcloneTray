@@ -19,7 +19,18 @@ const SettingKeys: SettingKey[] = [
   'rclone_serving_restic_enable',
   'rclone_serving_webdav_enable',
   'rclone_serving_username',
-  'rclone_serving_password'
+  'rclone_serving_password',
+  'rclone_sync_max_delete',
+  'rclone_sync_backup_dir',
+  'rclone_transfers',
+  'rclone_checkers',
+  'rclone_bwlimit',
+  'notification_level',
+  'rclone_serve_read_only',
+  'rclone_mount_network_mode',
+  'theme',
+  'check_updates',
+  'rclone_autoupload_names'
 ]
 
 export function assertSettingKey(value: unknown): SettingKey {

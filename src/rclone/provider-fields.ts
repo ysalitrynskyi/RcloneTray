@@ -70,6 +70,9 @@ export function fieldKind(option: ProviderOption): NormalizedFieldKind {
   if (option.$Type === 'directory' || option.$Type === 'file' || option.$Type === 'text') {
     return option.$Type
   }
+  if (option.$Type === 'boolean') {
+    return 'boolean'
+  }
   if (option.IsPassword) {
     return 'password'
   }

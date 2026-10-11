@@ -12,7 +12,10 @@
         <h1>Activity</h1>
         <p>Mounts, transfers, servers, and recent rclone output.</p>
       </div>
-      <button type="button" class="btn btn-secondary" id="refresh-btn">Refresh</button>
+      <div>
+        <button type="button" class="btn btn-secondary" id="clear-btn">Clear finished</button>
+        <button type="button" class="btn btn-secondary" id="refresh-btn">Refresh</button>
+      </div>
     </header>
     <section class="activity-list" id="activity-list">
       <div class="state">Loading activity… <span class="spinner"></span></div>
@@ -41,6 +44,7 @@
       function renderJob(job) {
         const card = document.createElement('article');
         card.className = 'job-card status-' + job.status;
+        card.dataset.jobId = job.id;
 
         const top = document.createElement('div');
         top.className = 'job-topline';
@@ -66,6 +70,13 @@
         ].filter(Boolean).join(' • ');
         card.appendChild(meta);
 
+        if (job.progress) {
+          const progress = document.createElement('div');
+          progress.className = 'job-progress';
+          progress.textContent = job.progress;
+          card.appendChild(progress);
+        }
+
         if (Array.isArray(job.logTail) && job.logTail.length) {
           const log = document.createElement('pre');
           log.className = 'job-log';
@@ -73,7 +84,51 @@
           card.appendChild(log);
         }
 
+        const actions = document.createElement('div');
+        if (job.status === 'running') {
+          const stop = document.createElement('button');
+          stop.type = 'button';
+          stop.textContent = 'Stop';
+          stop.addEventListener('click', async () => {
+            try {
+              await $main.jobs.stop(job.id);
+              refresh();
+            } catch (error) {
+              window.electronAPI.errorBox(error.message || String(error));
+            }
+          });
+          actions.appendChild(stop);
+        }
+        if (Array.isArray(job.logTail) && job.logTail.length) {
+          const copy = document.createElement('button');
+          copy.type = 'button';
+          copy.textContent = 'Copy log';
+          copy.addEventListener('click', async () => {
+            await navigator.clipboard.writeText(job.logTail.join('\n'));
+          });
+          actions.appendChild(copy);
+        }
+        if (actions.childNodes.length) {
+          card.appendChild(actions);
+        }
+
         return card;
+      }
+
+      function updateCard(card, job) {
+        card.className = 'job-card status-' + job.status;
+        const title = card.querySelector('.job-title');
+        const status = card.querySelector('.job-status');
+        const meta = card.querySelector('.job-meta');
+        const log = card.querySelector('.job-log');
+        const progress = card.querySelector('.job-progress');
+        if (title) title.textContent = job.label || job.id;
+        if (status) status.textContent = job.status;
+        if (meta) {
+          meta.textContent = [job.kind, job.bookmarkName, job.uri, job.message, job.progress].filter(Boolean).join(' • ');
+        }
+        if (progress) progress.textContent = job.progress || '';
+        if (log && Array.isArray(job.logTail)) log.textContent = job.logTail.slice(-8).join('\n');
       }
 
       async function refresh() {
@@ -83,8 +138,21 @@
             renderEmpty();
             return;
           }
-          list.textContent = '';
-          jobs.forEach(job => list.appendChild(renderJob(job)));
+          const seen = new Set();
+          jobs.forEach(job => {
+            seen.add(job.id);
+            const existing = list.querySelector('[data-job-id="' + CSS.escape(job.id) + '"]');
+            if (existing) {
+              updateCard(existing, job);
+            } else {
+              list.appendChild(renderJob(job));
+            }
+          });
+          list.querySelectorAll('[data-job-id]').forEach(card => {
+            if (!seen.has(card.dataset.jobId)) card.remove();
+          });
+          const empty = list.querySelector('.state');
+          if (empty) empty.remove();
         } catch (error) {
           list.textContent = '';
           const div = document.createElement('div');
@@ -94,6 +162,10 @@
         }
       }
 
+      document.getElementById('clear-btn').addEventListener('click', async () => {
+        await $main.jobs.clearFinished();
+        refresh();
+      });
       refreshBtn.addEventListener('click', refresh);
       refresh();
       window.setInterval(refresh, 2000);

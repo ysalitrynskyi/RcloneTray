@@ -1,7 +1,9 @@
 'use strict'
 
 import * as path from 'path'
-import { app, BrowserWindow, Menu, dialog, ipcMain, Notification, IpcMainInvokeEvent, IpcMainEvent } from 'electron'
+import { app, BrowserWindow, Menu, dialog, ipcMain, nativeTheme, Notification, IpcMainInvokeEvent, IpcMainEvent } from 'electron'
+import * as fs from 'fs'
+import * as os from 'os'
 import isDev from 'electron-is-dev'
 import * as dialogs from './dialogs'
 import * as tray from './tray'
@@ -42,9 +44,36 @@ ipcMain.handle('get-setting', (_event: IpcMainInvokeEvent, key: SettingKey) => {
   return settings.get(assertSettingKey(key))
 })
 
-ipcMain.handle('settings-merge', (_event: IpcMainInvokeEvent, data: Partial<Settings>) => {
-  return settings.merge(assertSettingsPatch(data))
+ipcMain.handle('settings-merge', async (_event: IpcMainInvokeEvent, data: Partial<Settings>) => {
+  const patch = assertSettingsPatch(data)
+  await settings.merge(patch)
+  if (patch.theme === 'light' || patch.theme === 'dark' || patch.theme === 'system') {
+    nativeTheme.themeSource = patch.theme
+  }
 })
+
+async function checkForUpdate(): Promise<void> {
+  if (!settings.get('check_updates')) {
+    return
+  }
+  try {
+    const response = await fetch('https://api.github.com/repos/ysalitrynskyi/RcloneTray/releases/latest', {
+      headers: { 'User-Agent': 'RcloneTray', Accept: 'application/vnd.github+json' },
+      signal: AbortSignal.timeout(8000)
+    })
+    if (!response.ok) {
+      return
+    }
+    const body = await response.json() as { tag_name?: string }
+    const latest = String(body.tag_name || '').replace(/^v/, '')
+    const current = app.getVersion()
+    if (latest && latest !== current && latest.split('.').some((part, index) => Number(part) > Number(current.split('.')[index] || 0))) {
+      dialogs.notification(`RcloneTray ${latest} is available. You are on ${current}.`, 'info')
+    }
+  } catch {
+    // Update checks are optional and must not affect startup.
+  }
+}
 
 ipcMain.handle('get-rclone-version', () => {
   return rclone.getVersion()
@@ -91,6 +120,21 @@ ipcMain.handle('get-job-state', () => {
   return rclone.getJobStates()
 })
 
+ipcMain.handle('stop-job', (_event: IpcMainInvokeEvent, id: string) => {
+  if (typeof id !== 'string' || !id) {
+    throw new Error('Missing job.')
+  }
+  rclone.stopJob(id)
+})
+
+ipcMain.handle('clear-finished-jobs', () => {
+  return rclone.clearFinishedJobs()
+})
+
+ipcMain.handle('test-remote-connection', (_event: IpcMainInvokeEvent, name: string) => {
+  return rclone.testRemoteConnection(assertExistingRemoteName(name))
+})
+
 ipcMain.handle('rclone-get-config', async () => {
   return rclone.getConfig()
 })
@@ -104,11 +148,21 @@ ipcMain.on('settings-set', (_event: IpcMainEvent, key: SettingKey, value: Settin
 })
 
 ipcMain.on('set-autostart', (_event: IpcMainEvent, state: boolean) => {
+  if (process.platform === 'linux') {
+    setLinuxAutostart(Boolean(state))
+    return
+  }
   app.setLoginItemSettings({ openAtLogin: state })
 })
 
 ipcMain.handle('is-autostart', async () => {
-  const loginSettings = app.getLoginItemSettings()
+  if (process.platform === 'linux') {
+    return linuxAutostartEnabled()
+  }
+  const loginSettings = app.getLoginItemSettings() as Electron.LoginItemSettings & { executableWillLaunchAtLogin?: boolean }
+  if (process.platform === 'win32' && typeof loginSettings.executableWillLaunchAtLogin === 'boolean') {
+    return loginSettings.openAtLogin && loginSettings.executableWillLaunchAtLogin
+  }
   return loginSettings.openAtLogin
 })
 
@@ -225,6 +279,39 @@ process.on('uncaughtException', function (error: Error) {
   }
 })
 
+if (process.env.APPIMAGE) {
+  app.commandLine.appendSwitch('no-sandbox')
+}
+
+function autostartDesktopPath(): string {
+  return path.join(os.homedir(), '.config', 'autostart', 'RcloneTray.desktop')
+}
+
+function linuxAutostartEnabled(): boolean {
+  return fs.existsSync(autostartDesktopPath())
+}
+
+function setLinuxAutostart(enabled: boolean): void {
+  const desktopPath = autostartDesktopPath()
+  if (!enabled) {
+    fs.rmSync(desktopPath, { force: true })
+    return
+  }
+  fs.mkdirSync(path.dirname(desktopPath), { recursive: true })
+  const executable = process.env.APPIMAGE || process.execPath
+  const body = [
+    '[Desktop Entry]',
+    'Type=Application',
+    'Name=RcloneTray',
+    'Comment=Rclone tray',
+    `Exec=${executable}`,
+    'X-GNOME-Autostart-enabled=true',
+    'Terminal=false',
+    ''
+  ].join('\n')
+  fs.writeFileSync(desktopPath, body, { mode: 0o644 })
+}
+
 // Check the OS.
 if (!['win32', 'linux', 'darwin'].includes(process.platform)) {
   throw new Error('Unsupported platform')
@@ -282,6 +369,20 @@ app.on('second-instance', () => app.focus())
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 app.on('ready', function () {
+  const theme = settings.get('theme')
+  if (theme === 'light' || theme === 'dark' || theme === 'system') {
+    nativeTheme.themeSource = theme
+  }
+  if (settings.isFirstRun()) {
+    void dialog.showMessageBox({
+      type: 'info',
+      title: 'Welcome to RcloneTray',
+      message: 'RcloneTray stays in the tray.',
+      detail: 'Use New Remote to add a cloud. Preferences holds mount, sync, and serving options. An encrypted rclone config is left read-only.',
+      buttons: ['OK']
+    })
+  }
+  void checkForUpdate()
   // Initialize the tray.
   tray.init()
 

@@ -1,7 +1,7 @@
 'use strict'
 
 import * as path from 'path'
-import { Tray, Menu, shell, MenuItemConstructorOptions } from 'electron'
+import { Tray, Menu, clipboard, shell, MenuItemConstructorOptions } from 'electron'
 import isDev from 'electron-is-dev'
 import * as settings from './settings'
 import * as rclone from './rclone'
@@ -60,7 +60,10 @@ function reportActionError(error: unknown): void {
 
 function bookmarkActionRouter(this: Bookmark | null, action: BookmarkAction, ...args: unknown[]): void {
   try {
-    bookmarkActionRouterBody.call(this, action, ...args)
+    const result = bookmarkActionRouterBody.call(this, action, ...args) as unknown
+    if (result && typeof (result as Promise<unknown>).then === 'function') {
+      void (result as Promise<unknown>).catch(reportActionError)
+    }
   } catch (error) {
     reportActionError(error)
   }
@@ -191,7 +194,8 @@ function generateBookmarkActionsSubmenu(bookmark: Bookmark): BookmarkMenuResult 
   let isUpload = false
   let isAutomaticUpload = false
   
-  if (settings.get('rclone_sync_enable') && bookmark._rclonetray_local_path_map && bookmark._rclonetray_local_path_map.trim()) {
+  const showSync = bookmark.$limited !== '1' && ((settings.get('rclone_sync_enable') && !!bookmark._rclonetray_local_path_map?.trim()) || rclone.isAutomaticUpload(bookmark))
+  if (showSync) {
     isDownload = rclone.isDownload(bookmark)
     isUpload = rclone.isUpload(bookmark)
     isAutomaticUpload = rclone.isAutomaticUpload(bookmark)
@@ -245,36 +249,31 @@ function generateBookmarkActionsSubmenu(bookmark: Bookmark): BookmarkMenuResult 
   // Serving.
   let isServing = false
   const availableServingProtocols = rclone.getAvailableServeProtocols()
-  const protocolKeys = Object.keys(availableServingProtocols) as ServeProtocol[]
-  const availableServingProtocolsLen = protocolKeys.length
+  const protocolNames: Record<ServeProtocol, string> = { http: 'HTTP', ftp: 'FTP', webdav: 'WebDAV', restic: 'Restic' }
+  const protocolKeys = (['http', 'ftp', 'webdav', 'restic'] as ServeProtocol[]).filter((protocol) => {
+    return !!availableServingProtocols[protocol] || rclone.serveStatus(protocol, bookmark) !== false
+  })
 
-  if (availableServingProtocolsLen) {
+  if (protocolKeys.length) {
     submenu.push({
       type: 'separator'
     })
 
-    protocolKeys.forEach((protocol, i) => {
+    protocolKeys.forEach((protocol) => {
       const servingURI = rclone.serveStatus(protocol, bookmark)
-
-      // Add separator before the menu item, only if current serve method is in process.
       if (servingURI !== false) {
         isServing = true
-        if (i > 0) {
-          submenu.push({
-            type: 'separator'
-          })
-        }
       }
-
+      const enabledHere = !!availableServingProtocols[protocol]
       submenu.push({
         type: 'checkbox',
-        label: `Serve ${availableServingProtocols[protocol]}`,
+        label: `Serve ${protocolNames[protocol]}${enabledHere ? '' : ' (still running)'}`,
         click: () => bookmarkActionRouter.call(bookmark, 'serve-start', protocol),
-        enabled: servingURI === false,
+        enabled: servingURI === false && enabledHere,
         checked: !!servingURI
       })
 
-      if (servingURI !== false) {
+      if (servingURI) {
         submenu.push(
           {
             label: 'Stop',
@@ -282,17 +281,13 @@ function generateBookmarkActionsSubmenu(bookmark: Bookmark): BookmarkMenuResult 
           },
           {
             label: `Open "${servingURI}"`,
-            click: () => bookmarkActionRouter.call(bookmark, 'open-web-browser', servingURI),
-            enabled: !!servingURI
+            click: () => bookmarkActionRouter.call(bookmark, 'open-web-browser', servingURI)
+          },
+          {
+            label: 'Copy URL',
+            click: () => clipboard.writeText(servingURI)
           }
         )
-
-        // Add separator after the menu item, only if current serve method is in process.
-        if (i < availableServingProtocolsLen - 1) {
-          submenu.push({
-            type: 'separator'
-          })
-        }
       }
     })
   }
@@ -327,7 +322,7 @@ function generateBookmarkActionsSubmenu(bookmark: Bookmark): BookmarkMenuResult 
     },
     {
       label: 'Edit',
-      enabled: !isConnected,
+      enabled: !isConnected && bookmark.$limited !== '1',
       click: () => dialogs.editBookmark.call(bookmark)
     }
   )
@@ -381,6 +376,10 @@ function refreshTrayMenu(): void {
     click: dialogs.addBookmark,
     accelerator: 'CommandOrControl+N'
   })
+  menuItems.push({
+    label: 'Stop all',
+    click: () => rclone.stopAllProcesses()
+  })
 
   const bookmarks = rclone.getBookmarks()
 
@@ -425,6 +424,12 @@ function refreshTrayMenu(): void {
 
   // Set the menu.
   trayIndicator.setContextMenu(Menu.buildFromTemplate(menuItems))
+  const jobs = rclone.getJobStates()
+  const running = jobs.filter((job) => job.status === 'running').length
+  const failed = jobs.find((job) => job.status === 'failed')
+  trayIndicator.setToolTip(failed
+    ? `RcloneTray — last error: ${failed.message || failed.label}`
+    : `RcloneTray — ${running} running`)
 
   // Set icon acording to the status
   if (icons.connected && icons.default) {

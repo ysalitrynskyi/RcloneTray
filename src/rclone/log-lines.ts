@@ -59,6 +59,42 @@ export function isMountAttemptLine(parsed: ParsedLogLine): boolean {
   return /Mounting on "/i.test(parsed.message)
 }
 
+function formatBytes(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) {
+    return '0 B'
+  }
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
+  let size = value
+  let unit = 0
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024
+    unit += 1
+  }
+  return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`
+}
+
+export function progressFromLog(line: string): string | null {
+  if (!line.trim().startsWith('{')) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(line) as { stats?: { bytes?: number; totalBytes?: number; speed?: number; errors?: number } }
+    const stats = parsed.stats
+    if (!stats) {
+      return null
+    }
+    const bytes = Number(stats.bytes || 0)
+    const total = Number(stats.totalBytes || 0)
+    if (!bytes && !total) {
+      return null
+    }
+    const errors = Number(stats.errors || 0)
+    return `${formatBytes(bytes)} of ${formatBytes(total)} at ${formatBytes(Number(stats.speed || 0))}/s${errors ? `, ${errors} errors` : ''}`
+  } catch {
+    return null
+  }
+}
+
 export function redactSecrets(line: string, secrets: string[]): string {
   let out = line
   for (const secret of secrets) {

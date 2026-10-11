@@ -20,6 +20,17 @@ export interface Settings {
   rclone_serving_webdav_enable: boolean
   rclone_serving_username: string
   rclone_serving_password: string
+  rclone_sync_max_delete: number
+  rclone_sync_backup_dir: string
+  rclone_transfers: number
+  rclone_checkers: number
+  rclone_bwlimit: string
+  notification_level: 'all' | 'errors' | 'off'
+  rclone_serve_read_only: boolean
+  rclone_mount_network_mode: boolean
+  theme: 'system' | 'light' | 'dark'
+  check_updates: boolean
+  rclone_autoupload_names: string
 }
 
 export type SettingKey = keyof Settings
@@ -103,6 +114,7 @@ export interface JobState {
   pid?: number
   uri?: string
   message?: string
+  progress?: string
   logTail: string[]
 }
 

@@ -56,19 +56,12 @@ describe('settings IPC contract (real module)', () => {
   })
 })
 
-describe('IPC handler signature conventions', () => {
-  it('handle-style handlers take (event, ...args)', () => {
-    const handler = (_event: unknown, type: string, name: string, options: Record<string, string>) =>
-      ({ type, name, options })
-    const result = handler({ sender: {} }, 's3', 'myremote', { bucket: 'test' })
-    expect(result).toEqual({ type: 's3', name: 'myremote', options: { bucket: 'test' } })
-  })
-
-  it('send-style handlers can reply through event.reply', () => {
-    const replyFn = vi.fn()
-    const handler = (event: { reply: (c: string, d: unknown) => void }, providerName: string) =>
-      event.reply('provider-data-reply', { name: providerName })
-    handler({ reply: replyFn }, 'google_drive')
-    expect(replyFn).toHaveBeenCalledWith('provider-data-reply', { name: 'google_drive' })
+describe('remote name rules used by IPC', () => {
+  it('accepts rclone names and rejects an empty update target', async () => {
+    const validation = await import('../../src/ipc/validation')
+    expect(validation.assertBookmarkName('my.remote')).toBe('my.remote')
+    expect(validation.assertExistingRemoteName('odd name')).toBe('odd name')
+    expect(() => validation.assertExistingRemoteName('')).toThrow(/Invalid remote name/)
+    expect(() => validation.assertBookmarkName('-nope')).toThrow(/cannot start/)
   })
 })

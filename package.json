@@ -25,7 +25,8 @@
   "license": "MIT",
   "main": "dist/main.js",
   "scripts": {
-    "postinstall": "./update-rclone-binaries.sh && electron-builder install-app-deps",
+    "postinstall": "node scripts/postinstall.js",
+    "fetch-rclone": "node scripts/fetch-rclone.js",
     "build": "tsc",
     "build:watch": "tsc --watch",
     "typecheck": "tsc --noEmit",
@@ -34,7 +35,7 @@
     "dev": "npm run build && electron .",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder",
-    "publish": "npm run build && electron-builder -p always --mac --win --linux --x64",
+    "release:publish": "npm run build && electron-builder -p always --mac --win --linux --x64",
     "lint": "eslint src --ext .ts",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -73,6 +74,7 @@
       "src/ui"
     ],
     "asar": true,
+    "beforePack": "scripts/stage-rclone.js",
     "asarUnpack": [
       "src/ui/icons/*"
     ],
@@ -91,7 +93,7 @@
         "github"
       ],
       "extraResources": [
-        "rclone/darwin/**",
+        { "from": "rclone/staged", "to": "rclone" },
         "rclone/LICENSE"
       ],
       "darkModeSupport": false
@@ -108,7 +110,7 @@
         "github"
       ],
       "extraResources": [
-        "rclone/linux/**",
+        { "from": "rclone/staged", "to": "rclone" },
         "rclone/LICENSE"
       ]
     },
@@ -129,7 +131,7 @@
         "github"
       ],
       "extraResources": [
-        "rclone/win32/**",
+        { "from": "rclone/staged", "to": "rclone" },
         "rclone/LICENSE"
       ]
     },

@@ -212,10 +212,23 @@ export function editBookmark(this: Bookmark): void {
 /**
  * Show OS notification
  */
-export function notification(message: string): void {
-  new Notification({
+export function notification(message: string, level: 'info' | 'error' = 'info'): void {
+  const mode = settings.get('notification_level')
+  const isError = level === 'error' || /fail|error|cannot|refusing|not available/i.test(message)
+  if (mode === 'off') {
+    return
+  }
+  if (mode === 'errors' && !isError) {
+    return
+  }
+  const notice = new Notification({
+    title: 'RcloneTray',
     body: message
-  }).show()
+  })
+  notice.on('click', () => {
+    activity()
+  })
+  notice.show()
 }
 
 /**
@@ -262,6 +275,17 @@ const quitDialogOptions: Electron.MessageBoxOptions = {
   detail: 'There are active processes that will be terminated.'
 }
 
+export function confirmAction(message: string, confirmLabel: string): boolean {
+  const choice = dialog.showMessageBoxSync({
+    type: 'warning',
+    buttons: ['Cancel', confirmLabel],
+    defaultId: 0,
+    cancelId: 0,
+    message
+  })
+  return choice === 1
+}
+
 export function confirmExit(): boolean {
   const choice = dialog.showMessageBoxSync(quitDialogOptions)
   return choice === 1
@@ -274,7 +298,18 @@ export function confirmExitAsync(): Promise<boolean> {
 
 export function confirmTransfer(method: 'upload' | 'download', bookmarkName: string, source: string, destination: string, preview: string): boolean {
   const action = method === 'upload' ? 'Upload' : 'Download'
-  const choice = dialog.showMessageBoxSync({
+  const choice = dialog.showMessageBoxSync(transferDialogOptions(bookmarkName, source, destination, preview, action))
+  return choice === 1
+}
+
+export function confirmTransferAsync(method: 'upload' | 'download', bookmarkName: string, source: string, destination: string, preview: string): Promise<boolean> {
+  const action = method === 'upload' ? 'Upload' : 'Download'
+  return dialog.showMessageBox(transferDialogOptions(bookmarkName, source, destination, preview, action))
+    .then((choice) => choice.response === 1)
+}
+
+function transferDialogOptions(bookmarkName: string, source: string, destination: string, preview: string, action: string): Electron.MessageBoxOptions {
+  return {
     type: 'warning',
     buttons: ['Cancel', `${action} now`],
     defaultId: 0,
@@ -282,21 +317,26 @@ export function confirmTransfer(method: 'upload' | 'download', bookmarkName: str
     title: `${action} ${bookmarkName}`,
     message: `${action} can overwrite or delete files at the destination.`,
     detail: `Source:\n${source}\n\nDestination:\n${destination}\n\nDry-run preview:\n${preview}`
-  })
-  return choice === 1
+  }
 }
 
+const automaticUploadDialog = (bookmarkName: string, source: string, destination: string): Electron.MessageBoxOptions => ({
+  type: 'warning',
+  buttons: ['Cancel', 'Enable automatic upload'],
+  defaultId: 0,
+  cancelId: 0,
+  title: `Enable automatic upload for ${bookmarkName}?`,
+  message: 'Automatic upload copies changed local files after file changes.',
+  detail: `Source:\n${source}\n\nDestination:\n${destination}\n\nDeletes are not mirrored automatically. Use manual Upload when you need a full sync.`
+})
+
 export function confirmAutomaticUpload(bookmarkName: string, source: string, destination: string): boolean {
-  const choice = dialog.showMessageBoxSync({
-    type: 'warning',
-    buttons: ['Cancel', 'Enable automatic upload'],
-    defaultId: 0,
-    cancelId: 0,
-    title: `Enable automatic upload for ${bookmarkName}?`,
-    message: 'Automatic upload copies changed local files after file changes.',
-    detail: `Source:\n${source}\n\nDestination:\n${destination}\n\nDeletes are not mirrored automatically. Use manual Upload when you need a full sync.`
-  })
-  return choice === 1
+  return dialog.showMessageBoxSync(automaticUploadDialog(bookmarkName, source, destination)) === 1
+}
+
+export function confirmAutomaticUploadAsync(bookmarkName: string, source: string, destination: string): Promise<boolean> {
+  return dialog.showMessageBox(automaticUploadDialog(bookmarkName, source, destination))
+    .then((choice) => choice.response === 1)
 }
 
 /**

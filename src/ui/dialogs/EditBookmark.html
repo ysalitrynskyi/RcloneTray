@@ -27,6 +27,7 @@
     </div>
 
     <div class="footer">
+      <button type="button" id="test-btn">Test connection</button>
       <button type="button" class="btn-danger" id="delete-btn">Delete remote</button>
       <button type="submit">Save changes</button>
     </div>
@@ -73,6 +74,18 @@
           } catch (error) {
             if (saveButton) saveButton.disabled = false;
             window.electronAPI.errorBox(error.message || String(error));
+          }
+        });
+
+        document.getElementById('test-btn').addEventListener('click', async function () {
+          this.disabled = true;
+          try {
+            const message = await $main.testConnection(props.$name);
+            window.electronAPI.messageBox(message);
+          } catch (error) {
+            window.electronAPI.errorBox(error.message || String(error));
+          } finally {
+            this.disabled = false;
           }
         });
 

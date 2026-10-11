@@ -48,7 +48,7 @@ Every rclone child is started with `--ask-password=false`.
 ## Commands
 
 ```bash
-npm install            # downloads ALL rclone binaries via postinstall (large)
+npm install            # downloads the current-platform rclone via postinstall (checksum-checked)
 npm run typecheck      # tsc --noEmit  (must be zero errors)
 npm run lint           # eslint src    (hard gate, zero errors)
 npm run test           # vitest unit + integration
@@ -106,8 +106,7 @@ skipped on Windows).
   quarantine/SmartScreen workaround (already in README + Getting Started + release notes).
 - `npm audit` reports vulnerabilities mostly from `electron-builder`'s transitive
   deps; they are build-time only. Bump when convenient.
-- Linux packages currently bundle all linux rclone arches via `extraResources`
-  (`rclone/linux/*`); could be slimmed to the target arch to reduce size.
+- Installers stage only the target rclone architecture in `scripts/stage-rclone.js`.
 - Coverage is high on `settings.ts` and the `rclone.ts` command builders; the
   Electron/UI modules (`main`, `tray`, `dialogs`, preload) are exercised only by
   the E2E smoke test, not unit-covered.

@@ -205,8 +205,11 @@ contextBridge.exposeInMainWorld('$main', {
   settingsMerge: (data: Record<string, unknown>): Promise<void> => ipcRenderer.invoke('settings-merge', data),
   getSetting: (key: string): Promise<unknown> => ipcRenderer.invoke('get-setting', key),
   jobs: {
-    all: (): Promise<unknown[]> => ipcRenderer.invoke('get-job-state')
+    all: (): Promise<unknown[]> => ipcRenderer.invoke('get-job-state'),
+    stop: (id: string): Promise<void> => ipcRenderer.invoke('stop-job', id),
+    clearFinished: (): Promise<unknown[]> => ipcRenderer.invoke('clear-finished-jobs')
   },
+  testConnection: (name: string): Promise<string> => ipcRenderer.invoke('test-remote-connection', name),
   rclone: (() => {
     const invokeIpc = async <T>(channel: string, ...args: unknown[]): Promise<T | undefined> => {
       try {
@@ -300,7 +303,9 @@ const htmlElementsApi = {
 
     container.addTab = function(label: string, content: DocumentFragment | HTMLElement): void {
       const tabsTabIndex = containerButtons.childNodes.length
-      const button = document.createElement('div')
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.setAttribute('role', 'tab')
       ;(button as unknown as { tabsTabIndex: number }).tabsTabIndex = tabsTabIndex
       button.className = `tab-button${tabsTabIndex > 0 ? '' : ' active'}`
       button.innerText = label

@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Upload and Download dry-runs run in the background and can be cancelled by stopping the preview. The confirmation lists how many files would be copied or deleted. A password-free timeout no longer blocks the tray for 30 seconds.
+- Activity updates the open cards in place and can stop a job, clear finished jobs, and copy a log. Transfer progress from rclone's JSON stats is shown there and in the tray tooltip.
+- Preferences no longer saves an untouched auto-detected config path, accepts a stored 0, and does not let a hidden number field block Save. Sidebar tabs and provider tabs are keyboard reachable. Clicking help text does not toggle the bundled-rclone checkbox. The footer says running jobs keep their old settings.
+- Windows Console Browser opens in a console that stays open after an error. Linux tries several terminals and leaves the window open when rclone fails. A stale FUSE mount is unmounted before the next Mount. AppImage builds disable the Chromium sandbox namespace that Ubuntu 24.04 blocks, and Restart uses the AppImage path.
+- Linux Launch at login writes an XDG autostart file. Windows shows launch-at-login only when Startup approval agrees. Crypt and union remotes can be mounted, served, or deleted. A server that is still running stays in the menu after its protocol is turned off.
+- `npm install` on Windows downloads the current rclone build with a checksum check. Installers include only the target architecture. A release tag that does not match package.json fails the release workflow. The npm script that published installers is `release:publish`, so it no longer shadows `npm publish`.
+
+### Added
+- Bandwidth, transfers, checkers, max deletes, and a backup directory in the sync command when set. Serve can be read-only. Windows mounts can use network mode. Per-remote mount options and mount-at-launch. Test connection on Edit. Optional update check. First-run welcome. Light, dark, or system theme. Notification level. Automatic upload is restored on the next launch.
+
+### Fixed
 - Automatic upload keeps changes that happen while a copy is running, and a file that changes continuously cannot postpone the upload forever. Deleting or editing a remote stops its watcher. A missing folder is refused instead of spinning the CPU, symlinks are not followed, and `.DS_Store` / `Thumbs.db` are ignored. Windows and macOS watch the tree with one recursive watcher.
 - Windows mounts let WinFsp choose the drive letter, so two quick mounts no longer collide. `\\?\UNC\server\share` is treated as a root path. A saved config path on a missing drive falls back to the default config instead of leaving the tray with no menu.
 - A failed settings save no longer keeps the new values in memory. Restart is armed only when the app is actually quitting. Reopening a minimized dialog restores it. On Windows, clicking the tray icon opens the menu.
