@@ -49,3 +49,12 @@ describe('custom args', () => {
     expect(sanitizeCustomArgs(['--vfs-cache-mode', 'full', '--bwlimit', '1M'], ['sync', 'a', 'b'])).toEqual(['--bwlimit', '1M'])
   })
 })
+
+describe('Activity log formatting', () => {
+  it('shows JSON log lines as time, level, object and message', async () => {
+    const { formatLogLine } = await import('../../src/rclone/log-lines')
+    expect(formatLogLine('{"time":"2026-10-11T08:01:26.11-04:00","level":"error","msg":"Failed to copy: in use","object":"docs/a.docx"}'))
+      .toBe('08:01:26 ERROR docs/a.docx: Failed to copy: in use')
+    expect(formatLogLine('2026/10/11 08:01:25 DEBUG : plain line')).toBe('2026/10/11 08:01:25 DEBUG : plain line')
+  })
+})

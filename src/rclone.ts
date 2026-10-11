@@ -14,7 +14,7 @@ import { formatTerminalCommand, shouldAppendAutoConfirm, shouldAppendPerformance
 import { obscureSecret } from './rclone/obscure'
 import { AUTO_UPLOAD_IGNORED, automaticUploadDelay, changesAutoUploadTarget } from './rclone/auto-upload'
 import { sanitizeCustomArgs, splitCommandArgs } from './rclone/custom-args'
-import { extractServeUrl, isFatalLog, isMountAttemptLine, parseLogLine, progressFromLog, redactSecrets, WatchedJobKind } from './rclone/log-lines'
+import { extractServeUrl, formatLogLine, isFatalLog, isMountAttemptLine, parseLogLine, progressFromLog, redactSecrets, WatchedJobKind } from './rclone/log-lines'
 import { DryRunCounter } from './rclone/dry-run'
 import { readConfigText } from './rclone/config-repository'
 import { createRemote, deleteRemote, rollbackCreatedRemote, updateRemote } from './rclone/config-mutations'
@@ -632,7 +632,7 @@ class BookmarkProcessManager {
   rcloneProcessWatchdogLine(logLine: string): void {
     const secrets = [String(this.childEnv?.RCLONE_PASS || ''), String(settings.get('rclone_serving_password') || '')].filter(Boolean)
     const safeLine = redactSecrets(logLine, secrets)
-    appendJobLog(this.id, safeLine)
+    appendJobLog(this.id, formatLogLine(safeLine))
     const parsed = parseLogLine(safeLine)
     const progress = progressFromLog(safeLine)
     if (progress) {
@@ -2213,7 +2213,7 @@ export function stopJob(id: string): void {
     throw new Error('That job is not running.')
   }
   try {
-    entry.process.kill()
+    new BookmarkProcessManager(entry.processName, entry.bookmarkName).kill()
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     throw new Error(message)

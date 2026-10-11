@@ -106,3 +106,21 @@ export function redactSecrets(line: string, secrets: string[]): string {
     .replace(/--pass(?:=|\s+)\S+/g, '--pass XXXX')
     .replace(/RCLONE_PASS="[^"]*"/g, 'RCLONE_PASS="XXXX"')
 }
+
+/** A JSON log line as "HH:MM:SS LEVEL object: message" for the Activity window. */
+export function formatLogLine(line: string): string {
+  const trimmed = line.trim()
+  if (!trimmed.startsWith('{')) {
+    return trimmed
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as { time?: unknown; level?: unknown; msg?: unknown; object?: unknown }
+    const time = typeof parsed.time === 'string' ? (parsed.time.match(/T(\d{2}:\d{2}:\d{2})/) || [])[1] || '' : ''
+    const level = String(parsed.level || '').toUpperCase()
+    const object = typeof parsed.object === 'string' && parsed.object ? `${parsed.object}: ` : ''
+    const message = typeof parsed.msg === 'string' ? parsed.msg.trim() : ''
+    return [time, level, `${object}${message}`].filter(Boolean).join(' ')
+  } catch {
+    return trimmed
+  }
+}
