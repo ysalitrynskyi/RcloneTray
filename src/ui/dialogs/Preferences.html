@@ -1,6 +1,8 @@
 <!doctype html>
 <html>
 <head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; base-uri 'none'; form-action 'none'">
   <title>Preferences</title>
   <link rel="stylesheet" href="../styles/ui.css">
   <style>
@@ -131,6 +133,15 @@
                 </div>
               </div>
             </div>
+            <div class="form-row">
+              <label class="form-label">Update check</label>
+              <div class="form-control">
+                <div class="checkbox-wrapper">
+                  <input type="checkbox" name="check_updates" id="check_updates">
+                </div>
+                <div class="form-help">Look for a newer GitHub release at startup.</div>
+              </div>
+            </div>
           </div>
 
           <div class="section">
@@ -142,6 +153,26 @@
                   <input type="checkbox" name="tray_menu_show_type" id="tray_menu_show_type">
                   <span class="checkbox-label">Display remote type in tray menu</span>
                 </div>
+              </div>
+            </div>
+            <div class="form-row">
+              <label class="form-label">Theme</label>
+              <div class="form-control">
+                <select name="theme" id="theme">
+                  <option value="system">System</option>
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <label class="form-label">Notifications</label>
+              <div class="form-control">
+                <select name="notification_level" id="notification_level">
+                  <option value="all">All</option>
+                  <option value="errors">Errors only</option>
+                  <option value="off">Off</option>
+                </select>
               </div>
             </div>
           </div>
@@ -204,6 +235,15 @@
                 <div class="form-help">How long folder listings stay cached.</div>
               </div>
             </div>
+            <div class="form-row">
+              <label class="form-label">Network mount</label>
+              <div class="form-control">
+                <div class="checkbox-wrapper">
+                  <input type="checkbox" name="rclone_mount_network_mode" id="rclone_mount_network_mode">
+                </div>
+                <div class="form-help">Windows only. Pass --network-mode to mount.</div>
+              </div>
+            </div>
           </div>
 
           <div class="section">
@@ -211,8 +251,8 @@
             <div class="form-row">
               <label class="form-label">Custom args</label>
               <div class="form-control">
-                <textarea name="custom_args" id="custom_args" placeholder="e.g. --vfs-cache-mode full"></textarea>
-                <div class="form-help">Space or newline separated rclone arguments. Check rclone.org/docs for options.</div>
+                <textarea name="custom_args" id="custom_args" placeholder="e.g. --transfers 8 --fast-list"></textarea>
+                <div class="form-help">Added to every rclone command. Flags a command does not support (for example VFS flags on a sync) are left out. Quote values with spaces. See rclone.org/docs.</div>
               </div>
             </div>
           </div>
@@ -364,44 +404,6 @@
                   <input type="checkbox" name="rclone_serve_read_only" id="rclone_serve_read_only">
                 </div>
                 <div class="form-help">HTTP, FTP and WebDAV use --read-only. Restic uses --append-only.</div>
-              </div>
-            </div>
-            <div class="form-row">
-              <label class="form-label">Notifications</label>
-              <div class="form-control">
-                <select name="notification_level" id="notification_level">
-                  <option value="all">All</option>
-                  <option value="errors">Errors only</option>
-                  <option value="off">Off</option>
-                </select>
-              </div>
-            </div>
-            <div class="form-row">
-              <label class="form-label">Theme</label>
-              <div class="form-control">
-                <select name="theme" id="theme">
-                  <option value="system">System</option>
-                  <option value="light">Light</option>
-                  <option value="dark">Dark</option>
-                </select>
-              </div>
-            </div>
-            <div class="form-row">
-              <label class="form-label">Update check</label>
-              <div class="form-control">
-                <div class="checkbox-wrapper">
-                  <input type="checkbox" name="check_updates" id="check_updates">
-                </div>
-                <div class="form-help">Look for a newer GitHub release at startup.</div>
-              </div>
-            </div>
-            <div class="form-row">
-              <label class="form-label">Network mount</label>
-              <div class="form-control">
-                <div class="checkbox-wrapper">
-                  <input type="checkbox" name="rclone_mount_network_mode" id="rclone_mount_network_mode">
-                </div>
-                <div class="form-help">Windows only. Pass --network-mode to mount.</div>
               </div>
             </div>
           </div>
