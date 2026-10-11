@@ -86,6 +86,64 @@ describe('config text editor', () => {
     expect(editConfigText('[a]\r\ntype = s3', { section: 'a', set: { region: 'x' } })).toBe('[a]\r\ntype = s3\r\nregion = x\r\n')
   })
 
+  it('removes every block of a duplicated section', () => {
+    const source = '[a]\ntype = s3\nx = 1\n\n[b]\ntype = local\n\n[a]\nx = 2\n'
+    expect(editConfigText(source, { section: 'a', removeSection: true })).toBe('[b]\ntype = local\n\n')
+    expect(listConfigSections(editConfigText(source, { section: 'a', removeSection: true }))).toEqual(['b'])
+  })
+
+  it('updates the definition rclone actually uses when a section is duplicated', () => {
+    const source = '[a]\ntype = s3\nx = 1\n\n[b]\ntype = local\n\n[a]\nx = 2\ny = 3\nx = 4\n'
+    const next = editConfigText(source, { section: 'a', set: { x: '9', z: '5' } })
+    expect(next).toBe('[a]\ntype = s3\nx = 1\n\n[b]\ntype = local\n\n[a]\nx = 2\ny = 3\nx = 9\nz = 5\n')
+  })
+
+  it('appends a key that is new to the last block of a duplicated section', () => {
+    const source = '[a]\ntype = s3\n\n[b]\ntype = local\n\n[a]\nx = 2\n'
+    expect(editConfigText(source, { section: 'a', set: { region: 'r' } })).toBe('[a]\ntype = s3\n\n[b]\ntype = local\n\n[a]\nx = 2\nregion = r\n')
+  })
+
+  it('unsets a key from every block of a duplicated section', () => {
+    const source = '[a]\npass = one\ntype = s3\n[b]\ntype = local\n[a]\npass = two\n'
+    expect(editConfigText(source, { section: 'a', unset: ['pass'] })).toBe('[a]\ntype = s3\n[b]\ntype = local\n[a]\n')
+  })
+
+  it('treats a header with spaces inside the brackets as the trimmed name', () => {
+    const source = '[ a ]\ntype = s3\n[\tb\t]\ntype = local\n'
+    expect(listConfigSections(source)).toEqual(['a', 'b'])
+    expect(editConfigText(source, { section: 'a', set: { region: 'r' } })).toBe('[ a ]\ntype = s3\nregion = r\n[\tb\t]\ntype = local\n')
+    expect(editConfigText(source, { section: 'b', removeSection: true })).toBe('[ a ]\ntype = s3\n')
+    expect(() => editConfigText(source, { section: 'a', createType: 's3' })).toThrow(/already exists/)
+  })
+
+  it('edits and removes keys written as "key: value"', () => {
+    const source = '[a]\ntype: s3\nregion :old\npass: secret\n'
+    expect(editConfigText(source, { section: 'a', set: { region: 'new' }, unset: ['pass'] })).toBe('[a]\ntype: s3\nregion = new\n')
+    expect(editConfigText(source, { section: 'a', set: { type: 's3' } })).toBe(source)
+  })
+
+  it('ignores a commented-out key and a key that merely contains the name', () => {
+    const source = '[a]\ntype = s3\n; region = old\n# region: old\nsubregion = keep\n'
+    expect(editConfigText(source, { section: 'a', set: { region: 'new' } })).toBe('[a]\ntype = s3\n; region = old\n# region: old\nsubregion = keep\nregion = new\n')
+  })
+
+  it('inserts new keys after the last key line, not under the next remote comment', () => {
+    const source = '[a]\ntype = s3\n\n; a trailing note\n\n# second remote\n[b]\ntype = local\n'
+    expect(editConfigText(source, { section: 'a', set: { region: 'r' } })).toBe('[a]\ntype = s3\nregion = r\n\n; a trailing note\n\n# second remote\n[b]\ntype = local\n')
+  })
+
+  it('inserts right after the header of a section with no keys', () => {
+    expect(editConfigText('[a]\n\n[b]\ntype = local\n', { section: 'a', set: { region: 'r' } })).toBe('[a]\nregion = r\n\n[b]\ntype = local\n')
+  })
+
+  it('separates a new section from the previous content with one blank line', () => {
+    expect(editConfigText('[a]\ntype = s3\n', { section: 'n', createType: 'local' })).toBe('[a]\ntype = s3\n\n[n]\ntype = local\n')
+    expect(editConfigText('[a]\ntype = s3', { section: 'n', createType: 'local' })).toBe('[a]\ntype = s3\n\n[n]\ntype = local\n')
+    expect(editConfigText('[a]\ntype = s3\n\n', { section: 'n', createType: 'local' })).toBe('[a]\ntype = s3\n\n[n]\ntype = local\n')
+    expect(editConfigText('[a]\r\ntype = s3\r\n', { section: 'n', createType: 'local' })).toBe('[a]\r\ntype = s3\r\n\r\n[n]\r\ntype = local\r\n')
+    expect(editConfigText('', { section: 'n', createType: 'local' })).toBe('[n]\ntype = local\n')
+  })
+
   it('removes one section without touching the neighbours', () => {
     const source = '[a]\ntype = local\nsecret = ab#cd\n\n[b]\ntype = sftp\n\n[c]\ntoken = {"a":"b="}\n'
     const next = editConfigText(source, { section: 'b', removeSection: true })

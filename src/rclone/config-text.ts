@@ -57,7 +57,7 @@ function newlineStyle(content: string): string {
 
 function headerName(text: string): string | null {
   const match = HEADER_RE.exec(text)
-  return match ? match[1] : null
+  return match ? match[1].trim() : null
 }
 
 export function isEncryptedRcloneConfig(content: string): boolean {
@@ -77,13 +77,16 @@ export function listConfigSections(content: string): string[] {
   return names
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-function keyValue(text: string, key: string): string | null {
-  const match = new RegExp(`^[ \\t]*${escapeRegExp(key)}[ \\t]*=[ \\t]*([\\s\\S]*)$`).exec(text)
-  return match ? match[1] : null
+function parseKeyLine(text: string): { key: string; value: string } | null {
+  const trimmed = text.trim()
+  if (!trimmed || trimmed[0] === ';' || trimmed[0] === '#' || headerName(text) !== null) {
+    return null
+  }
+  const split = text.search(/[=:]/)
+  if (split < 0) {
+    return null
+  }
+  return { key: text.slice(0, split).trim(), value: text.slice(split + 1).trim() }
 }
 
 function assertPlain(label: string, value: string): void {
@@ -109,26 +112,33 @@ export function editConfigText(original: string, edit: ConfigTextEdit): string {
 
   const { bom, rest } = splitBom(original)
   const lines = splitLines(rest)
-  const sections: Array<{ index: number; name: string }> = []
+  const sections: Array<{ index: number; name: string; end: number }> = []
   lines.forEach((line, index) => {
     const name = headerName(line.text)
-    if (name) {
-      sections.push({ index, name })
+    if (name !== null) {
+      if (sections.length > 0) {
+        sections[sections.length - 1].end = index
+      }
+      sections.push({ index, name, end: lines.length })
     }
   })
-  const found = sections.find((item) => item.name === edit.section)
+  const blocks = sections.filter((item) => item.name === edit.section)
   const nl = newlineStyle(rest)
 
   if (edit.removeSection) {
-    if (!found) {
+    if (blocks.length === 0) {
       return original
     }
-    const nextHeader = sections.find((item) => item.index > found.index)
-    const end = nextHeader ? nextHeader.index : lines.length
-    return bom + joinLines(lines.slice(0, found.index).concat(lines.slice(end)))
+    const doomed = new Set<number>()
+    for (const block of blocks) {
+      for (let i = block.index; i < block.end; i++) {
+        doomed.add(i)
+      }
+    }
+    return bom + joinLines(lines.filter((_line, index) => !doomed.has(index)))
   }
 
-  if (found && edit.createType) {
+  if (blocks.length > 0 && edit.createType) {
     throw new ConfigEditError(`A remote named "${edit.section}" already exists.`)
   }
 
@@ -139,7 +149,7 @@ export function editConfigText(original: string, edit: ConfigTextEdit): string {
     assertPlain(key, value)
   }
 
-  if (!found) {
+  if (blocks.length === 0) {
     if (!edit.createType) {
       throw new ConfigEditError(`Remote "${edit.section}" does not exist.`)
     }
@@ -147,10 +157,11 @@ export function editConfigText(original: string, edit: ConfigTextEdit): string {
     if (rest.length > 0 && !rest.endsWith('\n') && lines.length > 0) {
       lines[lines.length - 1].ending = nl
     }
-    const extra: TextLine[] = [
-      { text: `[${edit.section}]`, ending: nl },
-      { text: `type = ${edit.createType}`, ending: nl }
-    ]
+    const extra: TextLine[] = []
+    if (lines.length > 0 && lines[lines.length - 1].text.trim() !== '') {
+      extra.push({ text: '', ending: nl })
+    }
+    extra.push({ text: `[${edit.section}]`, ending: nl }, { text: `type = ${edit.createType}`, ending: nl })
     for (const [key, value] of Object.entries(assignments)) {
       if (key === 'type') {
         continue
@@ -160,54 +171,51 @@ export function editConfigText(original: string, edit: ConfigTextEdit): string {
     return bom + joinLines(lines.concat(extra))
   }
 
-  const nextHeader = sections.find((item) => item.index > found.index)
-  const end = nextHeader ? nextHeader.index : lines.length
-  const body = lines.slice(found.index + 1, end)
-  const kept: TextLine[] = []
-  const seen = new Set<string>()
+  const lastDefinition = new Map<string, number>()
+  const dropped = new Set<number>()
+  for (const block of blocks) {
+    for (let i = block.index + 1; i < block.end; i++) {
+      const parsed = parseKeyLine(lines[i].text)
+      if (!parsed) {
+        continue
+      }
+      if (Object.prototype.hasOwnProperty.call(assignments, parsed.key)) {
+        lastDefinition.set(parsed.key, i)
+      } else if (unset.has(parsed.key)) {
+        dropped.add(i)
+      }
+    }
+  }
 
-  for (const line of body) {
-    let matched: string | null = null
-    for (const key of Object.keys(assignments)) {
-      if (keyValue(line.text, key) !== null) {
-        matched = key
-        break
-      }
+  const lastBlock = blocks[blocks.length - 1]
+  let anchor = lastBlock.index
+  for (let i = lastBlock.index + 1; i < lastBlock.end; i++) {
+    if (parseKeyLine(lines[i].text)) {
+      anchor = i
     }
-    if (!matched) {
-      for (const key of unset) {
-        if (keyValue(line.text, key) !== null) {
-          matched = key
-          break
-        }
-      }
-    }
-    if (matched && unset.has(matched) && !Object.prototype.hasOwnProperty.call(assignments, matched)) {
-      continue
-    }
-    if (matched && Object.prototype.hasOwnProperty.call(assignments, matched)) {
-      seen.add(matched)
-      const current = keyValue(line.text, matched)
-      if (current === assignments[matched]) {
-        kept.push(line)
+  }
+
+  const missing = Object.entries(assignments).filter(([key]) => !lastDefinition.has(key))
+  const out: TextLine[] = []
+  lines.forEach((line, index) => {
+    if (!dropped.has(index)) {
+      const parsed = parseKeyLine(line.text)
+      if (parsed && lastDefinition.get(parsed.key) === index && parsed.value !== assignments[parsed.key]) {
+        out.push({ text: `${parsed.key} = ${assignments[parsed.key]}`, ending: line.ending })
       } else {
-        kept.push({ text: `${matched} = ${assignments[matched]}`, ending: line.ending || nl })
+        out.push(line)
       }
-      continue
     }
-    kept.push(line)
-  }
+    if (index === anchor && missing.length > 0) {
+      const tail = out[out.length - 1]
+      if (tail && tail.ending === '') {
+        tail.ending = nl
+      }
+      for (const [key, value] of missing) {
+        out.push({ text: `${key} = ${value}`, ending: nl })
+      }
+    }
+  })
 
-  const missing = Object.entries(assignments).filter(([key]) => !seen.has(key))
-  if (missing.length > 0) {
-    const tail = kept.length > 0 ? kept[kept.length - 1] : lines[found.index]
-    if (tail.ending === '') {
-      tail.ending = nl
-    }
-    for (const [key, value] of missing) {
-      kept.push({ text: `${key} = ${value}`, ending: nl })
-    }
-  }
-
-  return bom + joinLines(lines.slice(0, found.index + 1).concat(kept, lines.slice(end)))
+  return bom + joinLines(out)
 }
