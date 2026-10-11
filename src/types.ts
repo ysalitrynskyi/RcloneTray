@@ -108,8 +108,10 @@ export interface JobState {
 
 // Automatic upload types
 export interface AutomaticUploadEntry {
-  watcher: import('chokidar').FSWatcher | null
+  watcher: { close: () => void } | null
   timer: NodeJS.Timeout | null
+  dirty: boolean
+  firstEventAt: number | null
 }
 
 export interface AutomaticUploadRegistry {

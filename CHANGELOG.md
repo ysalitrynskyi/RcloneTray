@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Automatic upload keeps changes that happen while a copy is running, and a file that changes continuously cannot postpone the upload forever. Deleting or editing a remote stops its watcher. A missing folder is refused instead of spinning the CPU, symlinks are not followed, and `.DS_Store` / `Thumbs.db` are ignored. Windows and macOS watch the tree with one recursive watcher.
 - Windows mounts let WinFsp choose the drive letter, so two quick mounts no longer collide. `\\?\UNC\server\share` is treated as a root path. A saved config path on a missing drive falls back to the default config instead of leaving the tray with no menu.
 - A failed settings save no longer keeps the new values in memory. Restart is armed only when the app is actually quitting. Reopening a minimized dialog restores it. On Windows, clicking the tray icon opens the menu.
 - HTTP and FTP serving no longer pass the mount-only `--attr-timeout` flag. Each server binds its own free port. A serving password requires a username and is passed in the environment, not on the command line.

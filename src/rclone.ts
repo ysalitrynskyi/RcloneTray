@@ -12,6 +12,7 @@ import isDev from 'electron-is-dev'
 import * as settings from './settings'
 import * as dialogs from './dialogs'
 import { formatTerminalCommand, shouldAppendAutoConfirm } from './rclone/command'
+import { AUTO_UPLOAD_IGNORED, automaticUploadDelay } from './rclone/auto-upload'
 import { sanitizeCustomArgs, splitCommandArgs } from './rclone/custom-args'
 import { extractServeUrl, isFatalLog, isMountAttemptLine, parseLogLine, redactSecrets, WatchedJobKind } from './rclone/log-lines'
 import { backupConfigOnce, readConfigText, writeConfigText } from './rclone/config-repository'
@@ -472,6 +473,11 @@ class BookmarkProcessManager {
         } else {
           const message = signal ? `Stopped by ${signal}` : `Exited with code ${code ?? 'unknown'}`
           finishJob(id, signal ? 'cancelled' : 'failed', message)
+        }
+        const pending = AutomaticUploadRegistry[entry.bookmarkName]
+        if (entry.processName === 'upload' && pending?.dirty) {
+          pending.dirty = false
+          scheduleAutomaticUpload(entry.bookmarkName)
         }
       } else if (entry.data.OK) {
         if (entry.processName === 'mount') {
@@ -1006,6 +1012,7 @@ export async function updateBookmark(bookmark: Bookmark | string, values: Record
   const bm = getBookmark(bookmark)
   const providerObject = getProvider(bm.type)
   validateBookmarkOptions(providerObject, values, bm as unknown as Record<string, unknown>)
+  stopAutomaticUpload(bm.$name)
   const configFile = getConfigFile()
   const original = readConfigText(configFile)
   if (isEncryptedRcloneConfig(original)) {
@@ -1048,6 +1055,7 @@ export async function deleteBookmark(bookmark: Bookmark | string): Promise<void>
   }
   backupConfigOnce(configFile)
   writeConfigText(configFile, editConfigText(original, { section: bm.$name, removeSection: true }))
+  stopAutomaticUpload(bm.$name)
   BookmarkProcessManager.killAll(bm.$name)
   await updateBookmarksCache()
   dialogs.notification(`Bookmark ${bm.$name} is deleted.`)
@@ -1299,6 +1307,98 @@ export function isAutomaticUpload(bookmark: Bookmark | string): boolean {
   return Object.prototype.hasOwnProperty.call(AutomaticUploadRegistry, bm.$name)
 }
 
+function stopAutomaticUpload(name: string): void {
+  const entry = AutomaticUploadRegistry[name]
+  if (!entry) {
+    return
+  }
+  if (entry.timer) {
+    clearTimeout(entry.timer)
+  }
+  try {
+    entry.watcher?.close()
+  } catch (error) {
+    console.error('Rclone', 'Cannot close automatic upload watcher:', error)
+  }
+  delete AutomaticUploadRegistry[name]
+}
+
+function scheduleAutomaticUpload(name: string): void {
+  const entry = AutomaticUploadRegistry[name]
+  const bookmark = Cache.bookmarks[name]
+  if (!entry || !bookmark) {
+    return
+  }
+  if (new BookmarkProcessManager('upload', name).exists()) {
+    entry.dirty = true
+    return
+  }
+  const delayMs = (parseInt(String(settings.get('rclone_sync_autoupload_delay'))) || 5) * 1000
+  const now = Date.now()
+  if (!entry.firstEventAt) {
+    entry.firstEventAt = now
+  }
+  const wait = automaticUploadDelay(entry.firstEventAt, now, delayMs, Math.max(delayMs * 10, 60000))
+  if (entry.timer) {
+    clearTimeout(entry.timer)
+  }
+  entry.timer = setTimeout(() => {
+    const current = AutomaticUploadRegistry[name]
+    if (!current) {
+      return
+    }
+    current.timer = null
+    current.firstEventAt = null
+    if (new BookmarkProcessManager('upload', name).exists()) {
+      current.dirty = true
+      return
+    }
+    try {
+      sync('upload', getBookmark(name), { skipConfirm: true })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (/already such process/i.test(message)) {
+        current.dirty = true
+        return
+      }
+      dialogs.notification(`Automatic upload failed for ${name}: ${message}`)
+      console.error('Rclone', 'Automatic upload failed:', error)
+    }
+  }, wait)
+}
+
+function watchAutomaticUpload(name: string, directory: string): { close: () => void } {
+  const onChange = (filename?: string | null): void => {
+    if (filename && AUTO_UPLOAD_IGNORED.test(filename)) {
+      return
+    }
+    if (!AutomaticUploadRegistry[name]) {
+      return
+    }
+    scheduleAutomaticUpload(name)
+  }
+  const onError = (error: Error): void => {
+    dialogs.notification(`Automatic upload stopped for ${name}: ${error.message}`)
+    stopAutomaticUpload(name)
+    fireRcloneUpdateActions()
+  }
+  if (process.platform === 'win32' || process.platform === 'darwin') {
+    const watcher = fs.watch(directory, { recursive: true }, (_event, filename) => onChange(filename))
+    watcher.on('error', onError)
+    return { close: () => watcher.close() }
+  }
+  const watcher = chokidar.watch(directory, {
+    ignoreInitial: true,
+    followSymlinks: false,
+    disableGlobbing: true,
+    ignored: AUTO_UPLOAD_IGNORED,
+    atomic: true
+  })
+  watcher.on('error', onError)
+  watcher.on('all', (_event, filePath) => onChange(filePath))
+  return { close: () => { void watcher.close() } }
+}
+
 /**
  * Toggle automatic upload for bookmark
  */
@@ -1306,49 +1406,32 @@ export function toggleAutomaticUpload(bookmark: Bookmark | string): void {
   const bm = getBookmark(bookmark)
 
   if (Object.prototype.hasOwnProperty.call(AutomaticUploadRegistry, bm.$name)) {
-    if (AutomaticUploadRegistry[bm.$name].timer) {
-      clearTimeout(AutomaticUploadRegistry[bm.$name].timer as NodeJS.Timeout)
-    }
-    AutomaticUploadRegistry[bm.$name].watcher?.close()
-    delete AutomaticUploadRegistry[bm.$name]
+    stopAutomaticUpload(bm.$name)
   } else if (bm._rclonetray_local_path_map) {
-    const localPathError = getSyncLocalPathError(bm._rclonetray_local_path_map)
+    const localPath = bm._rclonetray_local_path_map
+    const localPathError = getSyncLocalPathError(localPath)
     if (localPathError) {
       throw new Error(localPathError)
     }
-    if (!dialogs.confirmAutomaticUpload(bm.$name, bm._rclonetray_local_path_map, getBookmarkRemoteWithRoot(bm))) {
+    let stat: fs.Stats
+    try {
+      stat = fs.statSync(localPath)
+    } catch {
+      throw new Error(`Local path does not exist: ${localPath}`)
+    }
+    if (!stat.isDirectory()) {
+      throw new Error(`Local path is not a directory: ${localPath}`)
+    }
+    if (!dialogs.confirmAutomaticUpload(bm.$name, localPath, getBookmarkRemoteWithRoot(bm))) {
       return
     }
     AutomaticUploadRegistry[bm.$name] = {
       watcher: null,
-      timer: null
+      timer: null,
+      dirty: false,
+      firstEventAt: null
     }
-
-    AutomaticUploadRegistry[bm.$name].watcher = chokidar.watch(bm._rclonetray_local_path_map, {
-      ignoreInitial: true,
-      disableGlobbing: true,
-      usePolling: false,
-      useFsEvents: true,
-      persistent: true,
-      alwaysStat: true,
-      atomic: true
-    })
-
-    AutomaticUploadRegistry[bm.$name].watcher!.on('raw', () => {
-      if (AutomaticUploadRegistry[bm.$name].timer) {
-        clearTimeout(AutomaticUploadRegistry[bm.$name].timer as NodeJS.Timeout)
-      }
-      const delaySeconds = parseInt(String(settings.get('rclone_sync_autoupload_delay'))) || 5
-      AutomaticUploadRegistry[bm.$name].timer = setTimeout(() => {
-        try {
-          sync('upload', bm, { skipConfirm: true })
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error)
-          dialogs.notification(`Automatic upload failed for ${bm.$name}: ${message}`)
-          console.error('Rclone', 'Automatic upload failed:', error)
-        }
-      }, delaySeconds * 1000)
-    })
+    AutomaticUploadRegistry[bm.$name].watcher = watchAutomaticUpload(bm.$name, localPath)
   }
 
   fireRcloneUpdateActions()
