@@ -14,11 +14,11 @@ npm install          # also downloads bundled rclone binaries (large, one-time)
 npm start            # build + launch the app
 ```
 
-If you only need to run checks (no packaging), you can skip the rclone download:
-
-```bash
-npm install --ignore-scripts
-```
+`npm install` also downloads the Electron binary. Do not pass `--ignore-scripts`
+if you are going to run `npm run test:e2e` or `npm start`: those need Electron,
+and `--ignore-scripts` skips its download. To skip only the large rclone
+binaries, set `RCLONE_VERSION` and pass a platform, or run the checks that do
+not launch Electron (`typecheck`, `lint`, `test`).
 
 ## Before you open a PR
 

@@ -12,6 +12,11 @@ describe('path safety', () => {
   it('blocks Windows drive roots', () => {
     expect(isRootOrDrivePath('C:\\', 'win32')).toBe(true)
     expect(isRootOrDrivePath('D:/', 'win32')).toBe(true)
+    expect(isRootOrDrivePath('\\\\server\\share', 'win32')).toBe(true)
+    expect(isRootOrDrivePath('\\\\server\\share\\', 'win32')).toBe(true)
+    expect(isRootOrDrivePath('\\\\?\\UNC\\server\\share', 'win32')).toBe(true)
+    expect(isRootOrDrivePath('\\\\?\\C:\\', 'win32')).toBe(true)
+    expect(isRootOrDrivePath('\\\\server\\share\\photos', 'win32')).toBe(false)
   })
 
   it('allows nested local folders', () => {

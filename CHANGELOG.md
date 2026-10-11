@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Windows mounts let WinFsp choose the drive letter, so two quick mounts no longer collide. `\\?\UNC\server\share` is treated as a root path. A saved config path on a missing drive falls back to the default config instead of leaving the tray with no menu.
+- A failed settings save no longer keeps the new values in memory. Restart is armed only when the app is actually quitting. Reopening a minimized dialog restores it. On Windows, clicking the tray icon opens the menu.
 - HTTP and FTP serving no longer pass the mount-only `--attr-timeout` flag. Each server binds its own free port. A serving password requires a username and is passed in the environment, not on the command line.
 - Edit and the other dialogs read their own window, not whichever window happens to be focused. Provider details are loaded before the form renders.
 - The bundled rclone helper is not chmod'd when it is already executable, and a read-only install is copied into the user data directory. The failure dialog can switch to the system rclone. The "Use bundled" preference applies on the next launch.

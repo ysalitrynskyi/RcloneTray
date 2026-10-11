@@ -164,10 +164,11 @@ function generateBookmarkActionsSubmenu(bookmark: Bookmark): BookmarkMenuResult 
 
   // Mount
   const isMounted = rclone.getMountStatus(bookmark)
+  const mountReady = typeof isMounted === 'string' && isMounted !== '*' && isMounted !== ''
   submenu.push({
     label: 'Mount',
     click: () => bookmarkActionRouter.call(bookmark, 'mount'),
-    checked: !!isMounted,
+    checked: mountReady,
     enabled: isMounted === false
   })
 
@@ -179,7 +180,7 @@ function generateBookmarkActionsSubmenu(bookmark: Bookmark): BookmarkMenuResult 
       },
       {
         label: `Open In ${fileExplorerLabel}`,
-        enabled: !!isMounted,
+        enabled: mountReady,
         click: () => bookmarkActionRouter.call(bookmark, 'open-mounted')
       }
     )
@@ -470,6 +471,12 @@ export function init(): void {
   // a failure here should not crash the whole application.
   try {
     trayIndicator = new Tray(icons.default)
+    if (process.platform === 'win32') {
+      trayIndicator.on('click', () => {
+        trayIndicator?.popUpContextMenu()
+      })
+    }
+    refresh()
   } catch (err) {
     console.error('Failed to create tray indicator:', err)
   }

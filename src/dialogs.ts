@@ -37,8 +37,12 @@ function createNewDialog(dialogName: string, options?: DialogOptions, props?: Di
     delete options.$singleId
     
     if (Object.prototype.hasOwnProperty.call(dialogsSingletoneInstances, singleId) && dialogsSingletoneInstances[singleId]) {
-      dialogsSingletoneInstances[singleId]!.focus()
-      return dialogsSingletoneInstances[singleId]
+      const existing = dialogsSingletoneInstances[singleId]!
+      if (existing.isMinimized()) {
+        existing.restore()
+      }
+      existing.focus()
+      return existing
     }
   }
 

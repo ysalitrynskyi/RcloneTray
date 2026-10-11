@@ -103,6 +103,7 @@ export function remove(item: SettingKey): boolean {
  * Merge current settings
  */
 export function merge(newSettings: Partial<Settings>): Promise<void> {
+  const previous: Settings = { ...cache }
   Object.keys(newSettings).forEach(function (key) {
     const k = key as SettingKey
     if (has(k)) {
@@ -110,7 +111,10 @@ export function merge(newSettings: Partial<Settings>): Promise<void> {
       (cache as any)[k] = coerceSettingValue(k, newSettings[k])
     }
   })
-  return updateFile()
+  return updateFile().catch((error: unknown) => {
+    Object.assign(cache, previous)
+    throw error
+  })
 }
 
 /**

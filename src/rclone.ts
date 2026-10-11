@@ -580,6 +580,10 @@ class BookmarkProcessManager {
     }
 
     if (kind === 'mount' && isMountAttemptLine(parsed) && !this.mountTimer && !this.get('OK')) {
+      const letter = parsed.message.match(/Mounting on "([A-Za-z]:)/)
+      if (letter) {
+        this.set('mountpoint', letter[1])
+      }
       this.mountTimer = setTimeout(() => {
         this.mountTimer = null
         if (!this.exists() || this.get('OK')) {
@@ -1152,36 +1156,6 @@ function freeMountpointDirectory(directoryPath: string): boolean {
 }
 
 /**
- * On windows find free drive letter.
- */
-function win32GetFreeLetter(): string {
-  const allLetters = ['E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']
-  // `wmic` is deprecated/removed on recent Windows; use PowerShell instead.
-  const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
-  const usedDriveLettersOutput = execFileSync(powershell, [
-    '-NoProfile',
-    '-NonInteractive',
-    '-Command',
-    '(Get-PSDrive -PSProvider FileSystem).Name'
-  ], { windowsHide: true })
-  const usedDriveLetters = usedDriveLettersOutput.toString()
-    .split(/\r?\n/)
-    .map((line) => {
-      const letter = line.trim().match(/^([A-Za-z])$/)
-      return letter ? letter[1].toUpperCase() : null
-    })
-    .filter((letter): letter is string => !!letter)
-
-  const freeLetter = allLetters.find((letter) => usedDriveLetters.indexOf(letter) === -1)
-
-  if (!freeLetter) {
-    throw new Error('Not available free drive letter')
-  }
-
-  return freeLetter + ':'
-}
-
-/**
  * Mount given bookmark
  */
 export function mount(bookmark: Bookmark | string): void {
@@ -1194,7 +1168,8 @@ export function mount(bookmark: Bookmark | string): void {
 
   let mountpoint: string
   if (process.platform === 'win32') {
-    mountpoint = win32GetFreeLetter()
+    // Let WinFsp choose a free letter. Picking one ourselves races when two mounts start together.
+    mountpoint = '*'
   } else if (process.platform === 'linux') {
     mountpoint = path.join(os.homedir(), `mount.${bm.type}.${bm.$name}`)
   } else {
@@ -1606,14 +1581,31 @@ export function init(): void {
     Cache.configFile = output.trim().split(/\r?\n/).pop() || ''
   }
 
-  // Ensure the directory for the config file exists.
-  const configDir = path.dirname(getConfigFile())
-  if (configDir && !fs.existsSync(configDir)) {
-    fs.mkdirSync(configDir, { recursive: true })
+  const ensureConfigLocation = (): void => {
+    const configDir = path.dirname(getConfigFile())
+    if (configDir && !fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir, { recursive: true })
+    }
+    if (!fs.existsSync(getConfigFile())) {
+      fs.writeFileSync(getConfigFile(), '', { mode: 0o600 })
+    }
   }
 
-  if (!fs.existsSync(getConfigFile())) {
-    fs.writeFileSync(getConfigFile(), '', { mode: 0o600 })
+  try {
+    ensureConfigLocation()
+  } catch (error) {
+    const saved = Cache.configFile
+    console.error('Rclone config path is not available:', saved, error)
+    try {
+      const output = doCommandSync(['config', 'file'])
+      Cache.configFile = output.trim().split(/\r?\n/).pop() || ''
+      ensureConfigLocation()
+      dialogs.notification(`Saved rclone config path is not available (${saved}). Using ${Cache.configFile} for this session.`)
+    } catch (fallbackError) {
+      console.error('Rclone', 'Cannot fall back to the default config:', fallbackError)
+      dialogs.notification('rclone config path is not available, and the default config could not be opened. Open Preferences after fixing the path.')
+      return
+    }
   }
 
   if (isEncryptedRcloneConfig(readConfigText(getConfigFile()))) {
@@ -1642,13 +1634,26 @@ export function init(): void {
  */
 let allowQuit = false
 let quitPromptOpen = false
+let relaunchOnQuit = false
+
+export function requestRelaunch(): void {
+  relaunchOnQuit = true
+  app.quit()
+}
 
 export function stopAllProcesses(): void {
   BookmarkProcessManager.killAll()
 }
 
 export function prepareQuit(event: Electron.Event): void {
-  if (allowQuit || BookmarkProcessManager.getActiveProcessesCount() < 1) {
+  if (BookmarkProcessManager.getActiveProcessesCount() < 1) {
+    if (relaunchOnQuit) {
+      app.relaunch()
+      relaunchOnQuit = false
+    }
+    return
+  }
+  if (allowQuit) {
     return
   }
   event.preventDefault()
@@ -1659,6 +1664,7 @@ export function prepareQuit(event: Electron.Event): void {
   void dialogs.confirmExitAsync().then((confirmed) => {
     quitPromptOpen = false
     if (!confirmed) {
+      relaunchOnQuit = false
       return
     }
     BookmarkProcessManager.killAll()
@@ -1666,6 +1672,9 @@ export function prepareQuit(event: Electron.Event): void {
     const waitForChildren = (): void => {
       if (BookmarkProcessManager.getActiveProcessesCount() < 1 || Date.now() >= deadline) {
         allowQuit = true
+        if (relaunchOnQuit) {
+          app.relaunch()
+        }
         app.quit()
         return
       }

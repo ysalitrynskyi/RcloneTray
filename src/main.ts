@@ -214,8 +214,7 @@ ipcMain.on('check-require-restart', async () => {
   })
 
   if (choice.response === 0) {
-    app.relaunch()
-    app.quit()
+    rclone.requestRelaunch()
   }
 })
 

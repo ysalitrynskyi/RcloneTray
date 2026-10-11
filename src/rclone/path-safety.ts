@@ -17,6 +17,19 @@ export function isRootOrDrivePath(input: string, platform: NodeJS.Platform = pro
     return true
   }
 
+  if (platform === 'win32') {
+    const withoutSlash = trimmed.replace(/[\\/]+$/, '')
+    if (/^\\\\\?\\[a-zA-Z]:$/i.test(withoutSlash)) {
+      return true
+    }
+    if (/^\\\\\?\\UNC\\[^\\]+\\[^\\]+$/i.test(withoutSlash)) {
+      return true
+    }
+    if (/^\\\\[^\\]+\\[^\\]+$/i.test(withoutSlash)) {
+      return true
+    }
+  }
+
   const normalized = normalizePlatformPath(trimmed, platform)
   const parsed = platform === 'win32'
     ? path.win32.parse(normalized)
