@@ -9,8 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.8.1] - 2026-10-11
 
+1.8.0 was tagged but not published. This release includes everything listed under 1.8.0.
+
 ### Fixed
-- Mounting works on macOS again. RcloneTray mounted under `/Volumes`, which
+- Mounting works on macOS. RcloneTray mounted under `/Volumes`, which
   rclone rejects when the folder does not exist and which only root can create,
   so every mount failed with "failed to retrieve mount path information". Remotes
   are now mounted in your home folder as `mount.<type>.<name>`, as on Linux. The

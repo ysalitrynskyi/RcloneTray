@@ -40,7 +40,10 @@ npm run build        # compiles to dist/
 npm run test:e2e     # E2E smoke (needs a prior build)
 ```
 
-CI runs the same gates on `master` and on pull requests.
+CI runs the same gates on `master` and on pull requests (E2E runs on Linux in CI).
+If you touch rclone behaviour, also run the real-rclone tests:
+`RCLONETRAY_RCLONE_PATH=$PWD/rclone/<platform>/<arch>/rclone npm test`. For UI
+changes, launch the app and check it in light and dark mode.
 
 ## Guidelines
 
@@ -52,7 +55,9 @@ CI runs the same gates on `master` and on pull requests.
 - **Don't commit** `node_modules/`, `dist/`, `release/`, or downloaded `rclone/`
   binaries (all gitignored).
 - **Update docs/CHANGELOG** when you change user-facing behavior.
-- Use clear, conventional-ish commit messages (e.g. `fix: …`, `feat: …`, `docs: …`).
+- Write a short, imperative commit subject that says what changes for the user
+  (e.g. `Mount on macOS in a home folder that RcloneTray creates`), and explain the
+  why in the body.
 
 ## Reporting bugs
 
