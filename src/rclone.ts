@@ -804,7 +804,7 @@ function updateProvidersCache(): Promise<void> {
             optionDefinition.$Type = kind
           } else {
             optionDefinition.$Type = 'string'
-            if (optionDefinition.DefaultStr) {
+            if (optionDefinition.DefaultStr || Array.isArray(optionDefinition.Default)) {
               optionDefinition.Default = displayDefault(optionDefinition)
             }
           }

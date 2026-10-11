@@ -66,6 +66,16 @@ export function parseBool(value: unknown): boolean {
   return text === 'true' || text === 'yes' || text === 't' || text === '1' || text === 'on'
 }
 
+const LIST_TYPES = new Set(['CommaSepList', 'SpaceSepList', 'stringArray'])
+
+function isTristateValue(value: unknown): boolean {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return false
+  }
+  const keys = Object.keys(value).sort()
+  return keys.length === 2 && keys[0] === 'Valid' && keys[1] === 'Value'
+}
+
 export function fieldKind(option: ProviderOption): NormalizedFieldKind {
   if (option.$Type === 'directory' || option.$Type === 'file' || option.$Type === 'text') {
     return option.$Type
@@ -79,7 +89,7 @@ export function fieldKind(option: ProviderOption): NormalizedFieldKind {
   if (option.Type === 'bool') {
     return 'boolean'
   }
-  if (option.Type === 'Tristate' || (option.Default !== null && typeof option.Default === 'object')) {
+  if (option.Type === 'Tristate' || (!LIST_TYPES.has(option.Type ?? '') && isTristateValue(option.Default))) {
     return 'tristate'
   }
   if (option.Type === 'int') {
@@ -104,6 +114,9 @@ export function fieldKind(option: ProviderOption): NormalizedFieldKind {
 export function displayDefault(option: ProviderOption): string {
   if (fieldKind(option) === 'tristate') {
     return option.DefaultStr || 'unset'
+  }
+  if (Array.isArray(option.Default)) {
+    return option.Default.map((item) => String(item)).join(option.Type === 'SpaceSepList' ? ' ' : ',')
   }
   if (option.Type === 'SizeSuffix' || option.Type === 'Duration' || option.Type === 'Time' || option.Type === 'Bits') {
     return option.DefaultStr || ''
