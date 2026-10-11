@@ -10,13 +10,15 @@ import chokidar from 'chokidar'
 import { app, powerMonitor, shell } from 'electron'
 import * as settings from './settings'
 import * as dialogs from './dialogs'
-import { formatTerminalCommand, shouldAppendAutoConfirm, windowsConsoleArgs } from './rclone/command'
-import { AUTO_UPLOAD_IGNORED, automaticUploadDelay } from './rclone/auto-upload'
+import { formatTerminalCommand, shouldAppendAutoConfirm, shouldAppendPerformanceFlags, windowsConsoleArgs } from './rclone/command'
+import { obscureSecret } from './rclone/obscure'
+import { AUTO_UPLOAD_IGNORED, automaticUploadDelay, changesAutoUploadTarget } from './rclone/auto-upload'
 import { sanitizeCustomArgs, splitCommandArgs } from './rclone/custom-args'
 import { extractServeUrl, isFatalLog, isMountAttemptLine, parseLogLine, progressFromLog, redactSecrets, WatchedJobKind } from './rclone/log-lines'
 import { DryRunCounter } from './rclone/dry-run'
-import { backupConfigOnce, readConfigText, writeConfigText } from './rclone/config-repository'
-import { ConfigEditError, editConfigText, isEncryptedRcloneConfig, listConfigSections } from './rclone/config-text'
+import { readConfigText } from './rclone/config-repository'
+import { createRemote, deleteRemote, rollbackCreatedRemote, updateRemote } from './rclone/config-mutations'
+import { ConfigEditError, isEncryptedRcloneConfig } from './rclone/config-text'
 import { assertAllowedExternalUrl } from './rclone/external-links'
 import {
   controlKind,
@@ -150,28 +152,30 @@ const pendingWindowsMounts: string[] = []
  */
 function prepareRcloneCommand(command: string[]): string[] {
   const appendAutoConfirm = shouldAppendAutoConfirm(command)
+  const appendPerformance = shouldAppendPerformanceFlags(command)
   const config = getConfigFile()
   if (config) {
     command.unshift('--config', config)
   }
   command.unshift('--ask-password=false')
-
-  if (useBundledRclone()) {
-    prepareBundledRcloneBinary()
-    command.unshift(activeBundledBinary)
-  } else {
-    command.unshift(resolveOnPath(RcloneBinaryName))
-  }
+  command.unshift(rcloneExecutable())
 
   if (appendAutoConfirm) {
     command.push('--auto-confirm')
   }
-  const verb = command.find((part) => ['mount', 'serve', 'sync', 'copy', 'move', 'ncdu'].includes(part))
-  if (verb) {
+  if (appendPerformance) {
     appendPerformanceFlags(command)
   }
 
   return command
+}
+
+function rcloneExecutable(): string {
+  if (useBundledRclone()) {
+    prepareBundledRcloneBinary()
+    return activeBundledBinary
+  }
+  return resolveOnPath(RcloneBinaryName)
 }
 
 /**
@@ -1178,8 +1182,11 @@ async function obscurePasswordFields(fields: { set: Record<string, string>; obsc
   for (const key of fields.obscure) {
     const plain = fields.set[key]
     let obscured = ''
+    if (/[\r\n\0]/.test(plain)) {
+      throw new Error(`Could not store ${key}. rclone config cannot hold a password with a line break.`)
+    }
     try {
-      obscured = (await doCommand(['obscure', '--', plain])).trim()
+      obscured = await obscureSecret(rcloneExecutable(), plain)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       throw new Error(`Could not store ${key}. ${message}`)
@@ -1214,26 +1221,11 @@ export async function addBookmark(type: string, bookmarkName: string, values: Re
   }
   createsInFlight.add(bookmarkName)
   const configFile = getConfigFile()
-  let original = ''
   let wrote = false
   try {
-    original = readConfigText(configFile)
-    if (isEncryptedRcloneConfig(original)) {
-      throw new ConfigEditError('This rclone config is encrypted. RcloneTray will not change it. Decrypt it, or edit it with rclone config.')
-    }
-    if (listConfigSections(original).includes(bookmarkName)) {
-      throw new ConfigEditError(`A remote named "${bookmarkName}" already exists.`)
-    }
     const fields = selectConfigFields(providerObject.Options, values, 'create')
     await obscurePasswordFields(fields)
-    backupConfigOnce(configFile)
-    const next = editConfigText(original, {
-      section: bookmarkName,
-      createType: providerObject.Prefix,
-      set: fields.set,
-      unset: fields.unset
-    })
-    writeConfigText(configFile, next)
+    await createRemote(configFile, bookmarkName, providerObject.Prefix, fields)
     wrote = true
     await updateBookmarksCache()
     dialogs.notification(`Bookmark ${bookmarkName} is created`)
@@ -1243,7 +1235,7 @@ export async function addBookmark(type: string, bookmarkName: string, values: Re
   } catch (err) {
     if (wrote) {
       try {
-        writeConfigText(configFile, original)
+        await rollbackCreatedRemote(configFile, bookmarkName)
         await updateBookmarksCache()
       } catch (rollbackError) {
         console.error('Rclone', 'Cannot rollback failed bookmark creation:', rollbackError)
@@ -1263,30 +1255,22 @@ export async function updateBookmark(bookmark: Bookmark | string, values: Record
   const bm = getBookmark(bookmark)
   const providerObject = getProvider(bm.type)
   validateBookmarkOptions(providerObject, values, bm as unknown as Record<string, unknown>)
-  stopAutomaticUpload(bm.$name)
   const configFile = getConfigFile()
-  const original = readConfigText(configFile)
-  if (isEncryptedRcloneConfig(original)) {
-    throw new ConfigEditError('This rclone config is encrypted. RcloneTray will not change it. Decrypt it, or edit it with rclone config.')
-  }
-  if (!listConfigSections(original).includes(bm.$name)) {
-    throw new ConfigEditError(`Remote "${bm.$name}" does not exist. It was not recreated.`)
-  }
   const fields = selectConfigFields(providerObject.Options, values, 'update', bm as unknown as Record<string, unknown>)
   await obscurePasswordFields(fields)
-  if (Object.keys(fields.set).length === 0 && fields.unset.length === 0) {
-    dialogs.notification(`Bookmark ${bm.$name} is updated.`)
-    return
-  }
-  backupConfigOnce(configFile)
+  const watchedChange = changesAutoUploadTarget(fields, bm as unknown as Record<string, unknown>)
   try {
-    const next = editConfigText(original, {
-      section: bm.$name,
-      set: fields.set,
-      unset: fields.unset
-    })
-    writeConfigText(configFile, next)
-    await updateBookmarksCache()
+    const changed = await updateRemote(configFile, bm.$name, fields)
+    if (changed) {
+      const wasWatching = Object.prototype.hasOwnProperty.call(AutomaticUploadRegistry, bm.$name)
+      try {
+        await updateBookmarksCache()
+      } finally {
+        if (wasWatching && watchedChange) {
+          restartAutomaticUpload(bm.$name)
+        }
+      }
+    }
     dialogs.notification(`Bookmark ${bm.$name} is updated.`)
   } catch (err) {
     console.error('Rclone', 'Cannot update bookmark', bm.$name, err)
@@ -1299,13 +1283,7 @@ export async function updateBookmark(bookmark: Bookmark | string, values: Record
  */
 export async function deleteBookmark(bookmark: Bookmark | string): Promise<void> {
   const bm = getBookmark(bookmark)
-  const configFile = getConfigFile()
-  const original = readConfigText(configFile)
-  if (isEncryptedRcloneConfig(original)) {
-    throw new ConfigEditError('This rclone config is encrypted. RcloneTray will not change it.')
-  }
-  backupConfigOnce(configFile)
-  writeConfigText(configFile, editConfigText(original, { section: bm.$name, removeSection: true }))
+  await deleteRemote(getConfigFile(), bm.$name)
   stopAutomaticUpload(bm.$name)
   BookmarkProcessManager.killAll(bm.$name)
   await updateBookmarksCache()
@@ -1680,6 +1658,29 @@ function stopAutomaticUpload(name: string): void {
     console.error('Rclone', 'Cannot close automatic upload watcher:', error)
   }
   delete AutomaticUploadRegistry[name]
+}
+
+function restartAutomaticUpload(name: string): void {
+  stopAutomaticUpload(name)
+  const bookmark = Cache.bookmarks[name]
+  const localPath = bookmark ? bookmark._rclonetray_local_path_map : ''
+  if (localPath) {
+    try {
+      const localPathError = getSyncLocalPathError(localPath)
+      if (localPathError) {
+        throw new Error(localPathError)
+      }
+      if (!fs.statSync(localPath).isDirectory()) {
+        throw new Error(`Local path is not a directory: ${localPath}`)
+      }
+      startAutomaticUpload(bookmark)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      dialogs.notification(`Automatic upload stopped for ${name}: ${message}`)
+    }
+  }
+  rememberAutomaticUploads()
+  fireRcloneUpdateActions()
 }
 
 function scheduleAutomaticUpload(name: string): void {

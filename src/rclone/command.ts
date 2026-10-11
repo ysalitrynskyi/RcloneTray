@@ -48,3 +48,9 @@ export function windowsConsoleArgs(title: string, command: string[]): string {
   const inner = command.map(quoteCmdArg).join(' ')
   return `/d /s /c "start "${title.replace(/"/g, '')}" cmd /k "${inner}""`
 }
+
+const PERFORMANCE_VERBS = ['mount', 'serve', 'sync', 'copy', 'move', 'ncdu']
+
+export function shouldAppendPerformanceFlags(command: string[]): boolean {
+  return PERFORMANCE_VERBS.includes(command[0])
+}
