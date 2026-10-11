@@ -80,13 +80,16 @@ function optionIsHidden(hide: unknown): boolean {
 }
 
 function parseBoolLoose(value: unknown): boolean {
-  if (value === true || value === 1) {
+  if (value === true) {
     return true
   }
-  if (typeof value !== 'string') {
+  if (value === false || value === null || value === undefined) {
     return false
   }
-  const text = value.trim().toLowerCase()
+  if (typeof value === 'number') {
+    return value !== 0
+  }
+  const text = String(value).trim().toLowerCase()
   return text === 'true' || text === 'yes' || text === 't' || text === '1' || text === 'on'
 }
 
