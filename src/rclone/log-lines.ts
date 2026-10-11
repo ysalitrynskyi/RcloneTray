@@ -1,0 +1,72 @@
+export interface ParsedLogLine {
+  level: string
+  message: string
+  objectName?: string
+}
+
+export type WatchedJobKind = 'transfer' | 'mount' | 'serve' | 'other'
+
+/**
+ * rclone --use-json-log line, or the older "date LEVEL: message" line.
+ * The object name stays out of the message so a file called "Failed to copy"
+ * cannot look like a fatal error.
+ */
+export function parseLogLine(line: string): ParsedLogLine {
+  const trimmed = line.trim()
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed) as { level?: unknown; msg?: unknown; object?: unknown }
+      return {
+        level: String(parsed.level || 'unknown').toLowerCase(),
+        message: typeof parsed.msg === 'string' ? parsed.msg : '',
+        objectName: typeof parsed.object === 'string' ? parsed.object : undefined
+      }
+    } catch {
+      // Not JSON. Fall through to the text format.
+    }
+  }
+  const match = trimmed.match(/^\d{4}\/\d{2}\/\d{2}[ T]\d{2}:\d{2}:\d{2}\s+([A-Za-z]+)\s*:\s*([\s\S]*)$/)
+  if (match) {
+    return { level: match[1].toLowerCase(), message: match[2] }
+  }
+  return { level: 'unknown', message: trimmed }
+}
+
+/** First http(s) URL in a serve line, ignoring the brackets rclone prints around it. */
+export function extractServeUrl(message: string): string | null {
+  const http = message.match(/https?:\/\/[^\s\]\[,"]+/)
+  if (http) {
+    return http[0]
+  }
+  const ftp = message.match(/Serving FTP on\s+(\S+)/i)
+  if (ftp) {
+    return `ftp://${ftp[1]}`
+  }
+  return null
+}
+
+export function isFatalLog(parsed: ParsedLogLine, kind: WatchedJobKind): boolean {
+  if (kind === 'transfer' || kind === 'other') {
+    return false
+  }
+  if (parsed.level === 'critical' || /^fatal error\b/i.test(parsed.message)) {
+    return true
+  }
+  return /address already in use/i.test(parsed.message)
+}
+
+export function isMountAttemptLine(parsed: ParsedLogLine): boolean {
+  return /Mounting on "/i.test(parsed.message)
+}
+
+export function redactSecrets(line: string, secrets: string[]): string {
+  let out = line
+  for (const secret of secrets) {
+    if (secret) {
+      out = out.split(secret).join('XXXX')
+    }
+  }
+  return out
+    .replace(/--pass(?:=|\s+)\S+/g, '--pass XXXX')
+    .replace(/RCLONE_PASS="[^"]*"/g, 'RCLONE_PASS="XXXX"')
+}

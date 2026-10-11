@@ -232,7 +232,8 @@ export function uncaughtException(detail: Error | unknown): boolean {
     const choice = dialog.showMessageBoxSync({
       type: 'error',
       buttons: ['Quit RcloneTray', 'Continue'],
-      defaultId: 0,
+      defaultId: 1,
+      cancelId: 1,
       title: 'Error',
       message: 'Unexpected runtime error.',
       detail: errorMessage
@@ -247,17 +248,24 @@ export function uncaughtException(detail: Error | unknown): boolean {
 /**
  * Show confirm exit dialog.
  */
+const quitDialogOptions: Electron.MessageBoxOptions = {
+  type: 'warning',
+  buttons: ['Cancel', 'Quit RcloneTray'],
+  defaultId: 0,
+  cancelId: 0,
+  title: 'Quit RcloneTray',
+  message: 'Are you sure you want to quit?',
+  detail: 'There are active processes that will be terminated.'
+}
+
 export function confirmExit(): boolean {
-  const choice = dialog.showMessageBoxSync({
-    type: 'warning',
-    buttons: ['Cancel', 'Quit RcloneTray'],
-    defaultId: 0,
-    cancelId: 0,
-    title: 'Quit RcloneTray',
-    message: 'Are you sure you want to quit?',
-    detail: 'There are active processes that will be terminated.'
-  })
+  const choice = dialog.showMessageBoxSync(quitDialogOptions)
   return choice === 1
+}
+
+/** Async so the main process keeps draining rclone stderr while the dialog is open. */
+export function confirmExitAsync(): Promise<boolean> {
+  return dialog.showMessageBox(quitDialogOptions).then((choice) => choice.response === 1)
 }
 
 export function confirmTransfer(method: 'upload' | 'download', bookmarkName: string, source: string, destination: string, preview: string): boolean {

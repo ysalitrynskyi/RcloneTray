@@ -52,7 +52,20 @@ type BookmarkAction =
 /**
  * Do action with bookmark
  */
+function reportActionError(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error)
+  dialogs.notification(message)
+}
+
 function bookmarkActionRouter(this: Bookmark | null, action: BookmarkAction, ...args: unknown[]): void {
+  try {
+    bookmarkActionRouterBody.call(this, action, ...args)
+  } catch (error) {
+    reportActionError(error)
+  }
+}
+
+function bookmarkActionRouterBody(this: Bookmark | null, action: BookmarkAction, ...args: unknown[]): void {
   switch (action) {
     case 'mount':
       if (this) rclone.mount(this)
@@ -97,7 +110,9 @@ function bookmarkActionRouter(this: Bookmark | null, action: BookmarkAction, ...
       shell.openPath(rclone.getConfigFile())
       break
     case 'delete-bookmark':
-      if (this) rclone.deleteBookmark(this.$name)
+      if (this) {
+        void rclone.deleteBookmark(this.$name).catch(reportActionError)
+      }
       break
     default:
       console.error('No such action', action, args, this)

@@ -220,6 +220,7 @@ ipcMain.on('check-require-restart', async () => {
 
 process.on('uncaughtException', function (error: Error) {
   if (dialogs.uncaughtException(error)) {
+    rclone.stopAllProcesses()
     app.exit()
   }
 })

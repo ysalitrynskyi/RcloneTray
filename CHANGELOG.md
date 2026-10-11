@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Transfers are no longer killed because a log line contains "Failed to" or "Error while", and "finished" is reported only when rclone exits 0. Mount is reported only after the mount attempt survives, not on the debug line that precedes it. Serve URLs are read out of the brackets current rclone prints.
+- Custom arguments are split with quotes, and `--daemon`, log-file and mount-only flags are not applied to every command. Long-running rclone processes hide their console window on Windows and do not keep stdin or stdout open.
+- Quitting with active jobs asks asynchronously, then waits for those jobs to exit. An unexpected error offers Continue first, and Quit stops the rclone children.
 - Adding or editing a remote no longer rewrites `rclone.conf`. Other remotes stay byte-for-byte, including values that contain `;`, `#`, `=`, token JSON, UNC paths, comments and indented section headers. An encrypted config is left read-only.
 - New remotes are written with rclone's own units (`5Mi`, `1m`) and only the fields you changed. Blank passwords are not stored, a password can start with `-`, and clearing a saved password removes the key.
 - Size, duration and tristate provider fields show the human value. Options rclone hides from its configurator stay hidden. `True`/`TRUE` booleans stay checked.
