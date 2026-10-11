@@ -19,6 +19,7 @@ import { backupConfigOnce, readConfigText, writeConfigText } from './rclone/conf
 import { ConfigEditError, editConfigText, isEncryptedRcloneConfig, listConfigSections } from './rclone/config-text'
 import { assertAllowedExternalUrl } from './rclone/external-links'
 import {
+  buildActiveValues,
   controlKind,
   displayDefault,
   isBucketBasedPrefix,
@@ -1050,7 +1051,7 @@ export function getBookmarks(): BookmarksCache {
 
 
 function validateBookmarkOptions(providerObject: Provider, values: Record<string, unknown>, existing?: Record<string, unknown>): void {
-  const activeValues = { ...(existing || {}), ...values }
+  const activeValues = buildActiveValues(providerObject.Options, values, existing)
   providerObject.Options.forEach((optionDefinition) => {
     if (!isProviderOptionActive(optionDefinition, activeValues)) {
       return

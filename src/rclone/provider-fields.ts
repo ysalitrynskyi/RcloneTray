@@ -139,6 +139,25 @@ export function displayDefault(option: ProviderOption): string {
   return ''
 }
 
+/**
+ * Values the form uses to decide which provider-dependent options show:
+ * display defaults first, then stored values, then submitted values.
+ */
+export function buildActiveValues(
+  options: ProviderOption[],
+  submitted: Record<string, unknown> = {},
+  stored: Record<string, unknown> = {}
+): Record<string, unknown> {
+  const active: Record<string, unknown> = {}
+  for (const option of options) {
+    const usual = displayDefault(option)
+    if (usual) {
+      active[option.Name] = usual
+    }
+  }
+  return { ...active, ...stored, ...submitted }
+}
+
 export function isProviderOptionActive(option: ProviderOption, values: Record<string, unknown>): boolean {
   if (isOptionHidden(option.Hide)) {
     return false
@@ -206,7 +225,7 @@ export function selectConfigFields(
   const set: Record<string, string> = {}
   const obscure: string[] = []
   const unset: string[] = []
-  const activeValues = { ...context, ...submitted }
+  const activeValues = buildActiveValues(options, submitted, context)
 
   for (const option of options) {
     if (!Object.prototype.hasOwnProperty.call(submitted, option.Name)) {
