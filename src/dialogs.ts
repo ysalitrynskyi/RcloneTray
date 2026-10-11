@@ -5,6 +5,7 @@ import { shell, app, BrowserWindow, Menu, Notification, dialog, nativeTheme, Men
 import * as settings from './settings'
 import { DialogProps, DialogWindow, Bookmark } from './types'
 import { assertAllowedExternalUrl } from './rclone/external-links'
+import { installUnloadGuard } from './dialog-guard'
 
 /**
  * Set the background color
@@ -87,6 +88,8 @@ function createNewDialog(dialogName: string, options?: DialogOptions, props?: Di
   theDialog.$props = props || {}
 
   theDialog.on('ready-to-show', () => theDialog?.show())
+
+  installUnloadGuard(theDialog, (win, prompt) => dialog.showMessageBoxSync(win, { ...prompt, buttons: [...prompt.buttons] }))
 
   // and load the index.html of the app.
   theDialog.loadFile(path.join(__dirname, '..', 'src', 'ui', 'dialogs', dialogName + '.html'))

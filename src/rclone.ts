@@ -19,11 +19,11 @@ import { backupConfigOnce, readConfigText, writeConfigText } from './rclone/conf
 import { ConfigEditError, editConfigText, isEncryptedRcloneConfig, listConfigSections } from './rclone/config-text'
 import { assertAllowedExternalUrl } from './rclone/external-links'
 import {
+  controlKind,
   displayDefault,
-  fieldKind,
+  findMissingRequiredOption,
   isBucketBasedPrefix,
   isOptionHidden,
-  isProviderOptionActive,
   providerDocsUrl,
   providerNeedsOAuth,
   remotePathSpec,
@@ -847,7 +847,7 @@ function updateProvidersCache(): Promise<void> {
         })
 
         provider.Options = provider.Options.map((optionDefinition) => {
-          const kind = fieldKind(optionDefinition)
+          const kind = controlKind(optionDefinition)
           if (kind === 'boolean') {
             optionDefinition.$Type = 'boolean'
           } else if (kind === 'tristate') {
@@ -861,7 +861,7 @@ function updateProvidersCache(): Promise<void> {
             optionDefinition.$Type = kind
           } else {
             optionDefinition.$Type = 'string'
-            if (optionDefinition.DefaultStr) {
+            if (optionDefinition.DefaultStr || Array.isArray(optionDefinition.Default)) {
               optionDefinition.Default = displayDefault(optionDefinition)
             }
           }
@@ -1168,20 +1168,10 @@ export function getBookmarks(): BookmarksCache {
 
 
 function validateBookmarkOptions(providerObject: Provider, values: Record<string, unknown>, existing?: Record<string, unknown>): void {
-  const activeValues = { ...(existing || {}), ...values }
-  providerObject.Options.forEach((optionDefinition) => {
-    if (!isProviderOptionActive(optionDefinition, activeValues)) {
-      return
-    }
-    if (!optionDefinition.Required) {
-      return
-    }
-    const submitted = Object.prototype.hasOwnProperty.call(values, optionDefinition.Name) ? values[optionDefinition.Name] : undefined
-    const already = existing ? existing[optionDefinition.Name] : undefined
-    if (!submitted && !already) {
-      throw new Error(`${optionDefinition.$Label || optionDefinition.Name} field is required`)
-    }
-  })
+  const missing = findMissingRequiredOption(providerObject.Options, values, existing)
+  if (missing) {
+    throw new Error(`${missing.$Label || missing.Name} field is required`)
+  }
 }
 
 async function obscurePasswordFields(fields: { set: Record<string, string>; obscure: string[] }): Promise<void> {

@@ -125,7 +125,8 @@ button.danger:hover, .btn-danger:hover {
 }
 .tab-button {
   padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
-  color: var(--text-2); cursor: pointer; transition: background .1s ease, color .1s ease;
+  background: transparent; color: var(--text-2); border-color: transparent;
+  cursor: pointer; transition: background .1s ease, color .1s ease;
   user-select: none;
 }
 .tab-button:focus-visible, .provider-item:focus-visible, .sidebar-item:focus-visible {
@@ -133,7 +134,7 @@ button.danger:hover, .btn-danger:hover {
   box-shadow: 0 0 0 3px var(--focus);
 }
 .tab-button:hover { background: var(--surface-2); color: var(--text); }
-.tab-button.active { background: var(--accent); color: var(--on-accent); }
+.tab-button.active, .tab-button.active:hover { background: var(--accent); color: var(--on-accent); }
 .tab-content { padding: var(--s2) 0; }
 
 .row { display: flex; gap: var(--s3); padding: 10px 0; align-items: flex-start; }

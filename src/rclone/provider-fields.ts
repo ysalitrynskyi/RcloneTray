@@ -66,6 +66,16 @@ export function parseBool(value: unknown): boolean {
   return text === 'true' || text === 'yes' || text === 't' || text === '1' || text === 'on'
 }
 
+const LIST_TYPES = new Set(['CommaSepList', 'SpaceSepList', 'stringArray'])
+
+function isTristateValue(value: unknown): boolean {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return false
+  }
+  const keys = Object.keys(value).sort()
+  return keys.length === 2 && keys[0] === 'Valid' && keys[1] === 'Value'
+}
+
 export function fieldKind(option: ProviderOption): NormalizedFieldKind {
   if (option.$Type === 'directory' || option.$Type === 'file' || option.$Type === 'text') {
     return option.$Type
@@ -79,7 +89,7 @@ export function fieldKind(option: ProviderOption): NormalizedFieldKind {
   if (option.Type === 'bool') {
     return 'boolean'
   }
-  if (option.Type === 'Tristate' || (option.Default !== null && typeof option.Default === 'object')) {
+  if (option.Type === 'Tristate' || (!LIST_TYPES.has(option.Type ?? '') && isTristateValue(option.Default))) {
     return 'tristate'
   }
   if (option.Type === 'int') {
@@ -100,10 +110,19 @@ export function fieldKind(option: ProviderOption): NormalizedFieldKind {
   return 'string'
 }
 
+/** Kind of control the form renders. Only real rclone passwords are masked; other sensitive options stay visible text. */
+export function controlKind(option: ProviderOption): NormalizedFieldKind {
+  const kind = fieldKind(option)
+  return kind === 'password' && !option.IsPassword ? 'string' : kind
+}
+
 /** Human text shown in the form. Never the raw SizeSuffix byte count. */
 export function displayDefault(option: ProviderOption): string {
   if (fieldKind(option) === 'tristate') {
     return option.DefaultStr || 'unset'
+  }
+  if (Array.isArray(option.Default)) {
+    return option.Default.map((item) => String(item)).join(option.Type === 'SpaceSepList' ? ' ' : ',')
   }
   if (option.Type === 'SizeSuffix' || option.Type === 'Duration' || option.Type === 'Time' || option.Type === 'Bits') {
     return option.DefaultStr || ''
@@ -118,6 +137,50 @@ export function displayDefault(option: ProviderOption): string {
     return option.DefaultStr
   }
   return ''
+}
+
+/**
+ * Values the form uses to decide which provider-dependent options show:
+ * display defaults first, then stored values, then submitted values.
+ */
+export function buildActiveValues(
+  options: ProviderOption[],
+  submitted: Record<string, unknown> = {},
+  stored: Record<string, unknown> = {}
+): Record<string, unknown> {
+  const active: Record<string, unknown> = {}
+  for (const option of options) {
+    const usual = displayDefault(option)
+    if (usual) {
+      active[option.Name] = usual
+    }
+  }
+  return { ...active, ...stored, ...submitted }
+}
+
+/**
+ * First active Required option that has neither a submitted value, a stored
+ * value, nor a non-empty default. Untouched fields are not submitted, so a
+ * default shown in the form must satisfy Required.
+ */
+export function findMissingRequiredOption(
+  options: ProviderOption[],
+  submitted: Record<string, unknown>,
+  stored?: Record<string, unknown>
+): ProviderOption | undefined {
+  const activeValues = buildActiveValues(options, submitted, stored)
+  return options.find((option) => {
+    if (!option.Required || !isProviderOptionActive(option, activeValues)) {
+      return false
+    }
+    if (Object.prototype.hasOwnProperty.call(submitted, option.Name) && submitted[option.Name]) {
+      return false
+    }
+    if (stored && stored[option.Name]) {
+      return false
+    }
+    return !displayDefault(option)
+  })
 }
 
 export function isProviderOptionActive(option: ProviderOption, values: Record<string, unknown>): boolean {
@@ -187,7 +250,7 @@ export function selectConfigFields(
   const set: Record<string, string> = {}
   const obscure: string[] = []
   const unset: string[] = []
-  const activeValues = { ...context, ...submitted }
+  const activeValues = buildActiveValues(options, submitted, context)
 
   for (const option of options) {
     if (!Object.prototype.hasOwnProperty.call(submitted, option.Name)) {
