@@ -1,7 +1,7 @@
 'use strict'
 
 import * as path from 'path'
-import { app, BrowserWindow, Menu, dialog, ipcMain, nativeTheme, Notification, IpcMainInvokeEvent, IpcMainEvent } from 'electron'
+import { app, BrowserWindow, Menu, dialog, ipcMain, nativeTheme, IpcMainInvokeEvent, IpcMainEvent } from 'electron'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as dialogs from './dialogs'
@@ -9,6 +9,7 @@ import * as tray from './tray'
 import * as rclone from './rclone'
 import * as settings from './settings'
 import { DialogWindow, SettingKey, Settings } from './types'
+import { isNewerVersion } from './version'
 import { assertBookmarkName, assertExistingRemoteName, assertProviderName, assertSettingKey, assertSettingsPatch } from './ipc/validation'
 
 // Error handler
@@ -66,7 +67,7 @@ async function checkForUpdate(): Promise<void> {
     const body = await response.json() as { tag_name?: string }
     const latest = String(body.tag_name || '').replace(/^v/, '')
     const current = app.getVersion()
-    if (latest && latest !== current && latest.split('.').some((part, index) => Number(part) > Number(current.split('.')[index] || 0))) {
+    if (latest && isNewerVersion(latest, current)) {
       dialogs.notification(`RcloneTray ${latest} is available. You are on ${current}.`, 'info')
     }
   } catch {
@@ -98,18 +99,6 @@ ipcMain.handle('get-rclone-get-config-file', () => {
   return rclone.getConfigFile()
 })
 
-ipcMain.on('get-provider-data', (event: IpcMainEvent, providerName: string) => {
-  try {
-    const provider = rclone.getProvider(providerName)
-    event.reply('provider-data-reply', provider)
-  } catch (error) {
-    console.error('get-provider-data failed:', error)
-    // Always reply so the renderer can stop waiting and show a useful message
-    // instead of an empty form with only the Name field.
-    event.reply('provider-data-reply', null)
-  }
-})
-
 ipcMain.handle('get-provider-data', async (_event: IpcMainInvokeEvent, providerName: string) => {
   await rclone.getProviders()
   return rclone.getProvider(assertProviderName(providerName))
@@ -132,18 +121,6 @@ ipcMain.handle('clear-finished-jobs', () => {
 
 ipcMain.handle('test-remote-connection', (_event: IpcMainInvokeEvent, name: string) => {
   return rclone.testRemoteConnection(assertExistingRemoteName(name))
-})
-
-ipcMain.handle('rclone-get-config', async () => {
-  return rclone.getConfig()
-})
-
-ipcMain.handle('settings-get', async (_event: IpcMainInvokeEvent, key: SettingKey) => {
-  return settings.get(assertSettingKey(key))
-})
-
-ipcMain.on('settings-set', (_event: IpcMainEvent, key: SettingKey, value: Settings[SettingKey]) => {
-  settings.set(key, value as never)
 })
 
 ipcMain.on('set-autostart', (_event: IpcMainEvent, state: boolean) => {
@@ -170,11 +147,6 @@ ipcMain.handle('get-props', async (event: IpcMainInvokeEvent) => {
   return window?.$props || {}
 })
 
-ipcMain.on('popup-context-menu', (event: IpcMainEvent, menuTemplate: Electron.MenuItemConstructorOptions[]) => {
-  const menu = Menu.buildFromTemplate(menuTemplate)
-  menu.popup({ window: windowFromSender(event.sender) })
-})
-
 ipcMain.handle('show-select-menu', async (event: IpcMainInvokeEvent, payload: { items?: Array<{ label: string; value: string }> }) => {
   const items = Array.isArray(payload?.items) ? payload.items : []
   return await new Promise<string | null>((resolve) => {
@@ -196,36 +168,44 @@ ipcMain.handle('show-select-menu', async (event: IpcMainInvokeEvent, payload: { 
   })
 })
 
-ipcMain.handle('show-message-box', async (event: IpcMainInvokeEvent, { message }: { message: string }) => {
+function messageText(payload: unknown): string {
+  const message = payload && typeof payload === 'object' ? (payload as { message?: unknown }).message : undefined
+  return typeof message === 'string' ? message.slice(0, 4000) : String(message ?? '')
+}
+
+ipcMain.handle('show-message-box', async (event: IpcMainInvokeEvent, payload: unknown) => {
   const response = await showMessageBox(event.sender, {
-    message,
+    message: messageText(payload),
     buttons: ['OK']
   })
   return response.response
 })
 
-ipcMain.handle('confirm-dialog', async (event: IpcMainInvokeEvent, { message }: { message: string }) => {
+ipcMain.handle('confirm-dialog', async (event: IpcMainInvokeEvent, payload: unknown) => {
   const response = await showMessageBox(event.sender, {
     type: 'question',
     buttons: ['Cancel', 'Confirm'],
     defaultId: 0,
     cancelId: 0,
-    message: message
+    message: messageText(payload)
   })
   return response.response
 })
 
-ipcMain.on('error-box', (_event: IpcMainEvent, { message }: { message: string }) => {
-  dialog.showErrorBox('Error', message)
+ipcMain.on('error-box', (event: IpcMainEvent, payload: unknown) => {
+  const owner = windowFromSender(event.sender)
+  const options: Electron.MessageBoxSyncOptions = { type: 'error', title: 'Error', message: messageText(payload), buttons: ['OK'] }
+  void (owner ? dialog.showMessageBox(owner, options) : dialog.showMessageBox(options))
 })
 
-ipcMain.on('show-notification', (_event: IpcMainEvent, { message }: { message: string }) => {
-  new Notification({ title: 'Notification', body: message.toString() }).show()
+ipcMain.on('show-notification', (_event: IpcMainEvent, payload: unknown) => {
+  dialogs.notification(messageText(payload))
 })
 
-ipcMain.on('resize-window', (event: IpcMainEvent, newHeight: number) => {
+ipcMain.on('resize-window', (event: IpcMainEvent, requestedHeight: unknown) => {
   const window = windowFromSender(event.sender)
-  if (!window) return
+  if (!window || typeof requestedHeight !== 'number' || !Number.isFinite(requestedHeight)) return
+  const newHeight = Math.max(200, Math.min(4000, Math.round(requestedHeight)))
 
   const [width] = window.getSize()
   if (process.platform === 'darwin') {
@@ -271,6 +251,14 @@ ipcMain.on('check-require-restart', async () => {
   }
 })
 
+process.on('unhandledRejection', (reason: unknown) => {
+  console.error('Unhandled rejection:', reason)
+  const message = reason instanceof Error ? reason.message : String(reason)
+  if (app.isReady()) {
+    dialogs.notification(message, 'error')
+  }
+})
+
 process.on('uncaughtException', function (error: Error) {
   if (dialogs.uncaughtException(error)) {
     rclone.stopAllProcesses()
@@ -278,16 +266,16 @@ process.on('uncaughtException', function (error: Error) {
   }
 })
 
-if (process.env.APPIMAGE) {
-  app.commandLine.appendSwitch('no-sandbox')
-}
-
 function autostartDesktopPath(): string {
   return path.join(os.homedir(), '.config', 'autostart', 'RcloneTray.desktop')
 }
 
 function linuxAutostartEnabled(): boolean {
   return fs.existsSync(autostartDesktopPath())
+}
+
+function desktopExecQuote(value: string): string {
+  return `"${value.replace(/(["`$\\])/g, '\\$1')}"`
 }
 
 function setLinuxAutostart(enabled: boolean): void {
@@ -303,7 +291,7 @@ function setLinuxAutostart(enabled: boolean): void {
     'Type=Application',
     'Name=RcloneTray',
     'Comment=Rclone tray',
-    `Exec=${executable}`,
+    `Exec=${desktopExecQuote(executable)}`,
     'X-GNOME-Autostart-enabled=true',
     'Terminal=false',
     ''
@@ -319,7 +307,18 @@ if (!['win32', 'linux', 'darwin'].includes(process.platform)) {
 // win32 workaround for poor rendering.
 if (process.platform === 'win32') {
   app.disableHardwareAcceleration()
+  app.setAppUserModelId('com.github.ysalitrynskyi.rclonetray')
 }
+
+// Dialogs only ever show their own local page.
+app.on('web-contents-created', (_event, contents) => {
+  contents.on('will-navigate', (navigation) => {
+    navigation.preventDefault()
+  })
+  contents.on('will-attach-webview', (attach) => {
+    attach.preventDefault()
+  })
+})
 
 // Do not allow multiple instances.
 if (!app.requestSingleInstanceLock()) {
@@ -371,6 +370,7 @@ app.on('ready', function () {
     nativeTheme.themeSource = theme
   }
   if (settings.isFirstRun()) {
+    void settings.merge({}).catch(() => undefined)
     void dialog.showMessageBox({
       type: 'info',
       title: 'Welcome to RcloneTray',
