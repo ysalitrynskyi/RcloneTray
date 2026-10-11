@@ -150,6 +150,38 @@ function createHelpTextElement(help: string): HTMLDivElement {
   return fieldHelpText
 }
 
+window.addEventListener('DOMContentLoaded', () => {
+  let dirty = false
+  let armed = false
+  window.setTimeout(() => {
+    armed = true
+  }, 800)
+  document.addEventListener('input', () => {
+    if (armed) {
+      dirty = true
+    }
+  })
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      window.close()
+      return
+    }
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      const form = document.querySelector('form')
+      if (form instanceof HTMLFormElement) {
+        form.requestSubmit()
+      }
+    }
+  })
+  window.addEventListener('beforeunload', (event) => {
+    if (!dirty) {
+      return
+    }
+    event.preventDefault()
+    event.returnValue = false
+  })
+})
+
 function resizeToContentWindow(): void {
   let newHeight = document.body.scrollHeight + (window.outerHeight - window.innerHeight)
   if (newHeight > window.screen.height * 0.85) {
