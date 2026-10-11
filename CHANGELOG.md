@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Electron 44, chokidar 4, ESLint 9, and Vitest 3. `electron-is-dev` and `electron-context-menu` are gone. Dev mode is `!app.isPackaged`.
+
 ### Fixed
 - Upload and Download dry-runs run in the background and can be cancelled by stopping the preview. The confirmation lists how many files would be copied or deleted. A password-free timeout no longer blocks the tray for 30 seconds.
 - Activity updates the open cards in place and can stop a job, clear finished jobs, and copy a log. Transfer progress from rclone's JSON stats is shown there and in the tray tooltip.

@@ -8,7 +8,6 @@ import * as path from 'path'
 import * as fs from 'fs'
 import chokidar from 'chokidar'
 import { app, powerMonitor, shell } from 'electron'
-import isDev from 'electron-is-dev'
 import * as settings from './settings'
 import * as dialogs from './dialogs'
 import { formatTerminalCommand, shouldAppendAutoConfirm } from './rclone/command'
@@ -283,7 +282,7 @@ const RcloneExecMaxBuffer = 32 * 1024 * 1024
 function doCommand(command: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const cmd = prepareRcloneCommand(command)
-    if (isDev) {
+    if (!app.isPackaged) {
       console.info('Rclone[A]', cmd)
     }
     execFile(cmd[0], cmd.slice(1), { maxBuffer: RcloneExecMaxBuffer, windowsHide: true }, (err, stdout, stderr) => {
@@ -304,7 +303,7 @@ function doCommand(command: string[]): Promise<string> {
  */
 function doCommandSync(command: string[]): string {
   const cmd = prepareRcloneCommand(command)
-  if (isDev) {
+  if (!app.isPackaged) {
     console.info('Rclone[S]', cmd)
   }
   return execFileSync(cmd[0], cmd.slice(1), { maxBuffer: RcloneExecMaxBuffer, windowsHide: true }).toString()
@@ -316,7 +315,7 @@ function doCommandSync(command: string[]): string {
 function doCommandInTerminal(command: string[]): void {
   const cmdStr = formatTerminalCommand(command)
 
-  if (isDev) {
+  if (!app.isPackaged) {
     console.log('Rclone[T]', cmdStr)
   }
 
@@ -440,7 +439,7 @@ class BookmarkProcessManager {
       pid: child.pid
     })
 
-    if (isDev) {
+    if (!app.isPackaged) {
       console.log('Rclone[BP]', cmd)
     }
 
@@ -676,7 +675,7 @@ function updateBookmarksCache(): Promise<void> {
           }
           next[key] = stored
         })
-      } catch (err) {
+      } catch {
         throw new Error('Problem reading bookmarks list.')
       }
       Cache.bookmarks = next
@@ -699,7 +698,7 @@ function updateProvidersCache(): Promise<void> {
       let providers: Provider[]
       try {
         providers = JSON.parse(providersStr)
-      } catch (err) {
+      } catch {
         throw new Error('Cannot read providers list.')
       }
 
@@ -1601,11 +1600,10 @@ function watchAutomaticUpload(name: string, directory: string): { close: () => v
   const watcher = chokidar.watch(directory, {
     ignoreInitial: true,
     followSymlinks: false,
-    disableGlobbing: true,
     ignored: AUTO_UPLOAD_IGNORED,
     atomic: true
   })
-  watcher.on('error', onError)
+  watcher.on('error', (error: unknown) => onError(error instanceof Error ? error : new Error(String(error))))
   watcher.on('add', (filePath) => onChange(filePath))
   watcher.on('change', (filePath) => onChange(filePath))
   watcher.on('unlink', (filePath) => onChange(filePath))
@@ -1891,7 +1889,7 @@ export function getConfig(): Promise<BookmarksCache> {
     .then((output) => {
       try {
         return JSON.parse(output)
-      } catch (err) {
+      } catch {
         throw new Error('Cannot parse rclone config')
       }
     })
@@ -2007,11 +2005,8 @@ export function init(): void {
 
   chokidar.watch(getConfigFile(), {
     ignoreInitial: true,
-    disableGlobbing: true,
     usePolling: false,
-    useFsEvents: true,
     persistent: true,
-    alwaysStat: true,
     atomic: true
   })
     .on('change', () => {

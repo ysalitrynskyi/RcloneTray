@@ -77,7 +77,7 @@ chmod +x RcloneTray-*.AppImage
 **Operating systems**
 
 - Windows 10 or 11 (x64, arm64)
-- macOS 10.15 or later (Intel and Apple Silicon)
+- macOS 12 or later (Intel and Apple Silicon)
 - Linux (x64) with a desktop environment that supports tray icons
 
 **Mounting (optional)**

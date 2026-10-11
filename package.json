@@ -36,7 +36,7 @@
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder",
     "release:publish": "npm run build && electron-builder -p always --mac --win --linux --x64",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -93,7 +93,10 @@
         "github"
       ],
       "extraResources": [
-        { "from": "rclone/staged", "to": "rclone" },
+        {
+          "from": "rclone/staged",
+          "to": "rclone"
+        },
         "rclone/LICENSE"
       ],
       "darkModeSupport": false
@@ -110,7 +113,10 @@
         "github"
       ],
       "extraResources": [
-        { "from": "rclone/staged", "to": "rclone" },
+        {
+          "from": "rclone/staged",
+          "to": "rclone"
+        },
         "rclone/LICENSE"
       ]
     },
@@ -131,7 +137,10 @@
         "github"
       ],
       "extraResources": [
-        { "from": "rclone/staged", "to": "rclone" },
+        {
+          "from": "rclone/staged",
+          "to": "rclone"
+        },
         "rclone/LICENSE"
       ]
     },
@@ -141,24 +150,22 @@
     }
   },
   "dependencies": {
-    "chokidar": "^3.5.2",
-    "electron-context-menu": "^2.5.0",
-    "electron-is-dev": "^2.0.0",
+    "chokidar": "4.0.3",
     "ini": "^2.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.40.0",
     "@types/ini": "^4.1.0",
     "@types/node": "^20.10.0",
-    "@typescript-eslint/eslint-plugin": "^6.13.0",
-    "@typescript-eslint/parser": "^6.13.0",
-    "@vitest/coverage-v8": "^1.6.1",
-    "electron": "^29.1.4",
-    "electron-builder": "^24.13.3",
+    "@typescript-eslint/eslint-plugin": "8.71.1",
+    "@typescript-eslint/parser": "8.71.1",
+    "@vitest/coverage-v8": "3.2.7",
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3",
     "electron-reload": "^1.5.0",
-    "eslint": "^8.55.0",
+    "eslint": "9.39.5",
     "playwright": "^1.40.0",
     "typescript": "^5.3.2",
-    "vitest": "^1.0.0"
+    "vitest": "3.2.7"
   }
 }

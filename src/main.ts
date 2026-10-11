@@ -4,7 +4,6 @@ import * as path from 'path'
 import { app, BrowserWindow, Menu, dialog, ipcMain, nativeTheme, Notification, IpcMainInvokeEvent, IpcMainEvent } from 'electron'
 import * as fs from 'fs'
 import * as os from 'os'
-import isDev from 'electron-is-dev'
 import * as dialogs from './dialogs'
 import * as tray from './tray'
 import * as rclone from './rclone'
@@ -324,7 +323,7 @@ if (process.platform === 'win32') {
 
 // Do not allow multiple instances.
 if (!app.requestSingleInstanceLock()) {
-  if (isDev) {
+  if (!app.isPackaged) {
     console.log('There is already a started RcloneTray instance.')
   }
   app.focus()
@@ -337,8 +336,7 @@ const isTest = process.env.RCLONETRAY_TEST === '1'
 
 // For debugging purposes (skipped under the E2E harness so we don't fight
 // Playwright's own inspector/relaunch handling).
-if (isDev && !isTest) {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+if (!app.isPackaged && !isTest) {
   const inspector = require('inspector')
 
   if (inspector.url()) {
@@ -354,7 +352,6 @@ if (isDev && !isTest) {
 
   // load electron-reload
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     require('electron-reload')(__dirname, {
       electron: path.join(__dirname, '..', 'node_modules', '.bin', 'electron')
     })
@@ -393,7 +390,7 @@ app.on('ready', function () {
   // Only on macOS is there app.dock.
   if (process.platform === 'darwin') {
     // Hide the app from dock and taskbar.
-    app.dock.hide()
+    app.dock?.hide()
   }
 })
 
@@ -402,6 +399,6 @@ app.on('before-quit', rclone.prepareQuit)
 
 // Should not quit when all windows are closed,
 // because the application is staying as a system tray indicator.
-app.on('window-all-closed', function (event: Electron.Event) {
-  event.preventDefault()
+app.on('window-all-closed', function () {
+  // Stay in the tray when the last dialog closes.
 })

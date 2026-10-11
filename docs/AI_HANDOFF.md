@@ -4,7 +4,7 @@ Quick reference for whoever (human or agent) works on RcloneTray next.
 
 ## Stack
 
-- **Electron 29** + **TypeScript 5** (strict), compiled with `tsc` to `dist/`.
+- **Electron 44** + **TypeScript 5** (strict), compiled with `tsc` to `dist/`.
 - **electron-builder 24** for packaging (output → `release/`).
 - Tests: **vitest** (unit/integration) + **Playwright** (`_electron`) for E2E.
 - Bundled **rclone** binaries downloaded at `postinstall` into `rclone/` (gitignored).

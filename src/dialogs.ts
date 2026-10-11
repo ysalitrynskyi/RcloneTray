@@ -2,8 +2,6 @@
 
 import * as path from 'path'
 import { shell, app, BrowserWindow, Menu, Notification, dialog, nativeTheme, MenuItemConstructorOptions } from 'electron'
-import electronContextMenu from 'electron-context-menu'
-import isDev from 'electron-is-dev'
 import * as settings from './settings'
 import { DialogProps, DialogWindow, Bookmark } from './types'
 import { assertAllowedExternalUrl } from './rclone/external-links'
@@ -61,7 +59,7 @@ function createNewDialog(dialogName: string, options?: DialogOptions, props?: Di
     webPreferences: {
       backgroundThrottling: false,
       preload: path.join(__dirname, 'dialogs-preload.js'),
-      devTools: isDev,
+      devTools: !app.isPackaged,
       defaultEncoding: 'UTF-8',
       contextIsolation: true,
       nodeIntegration: false,
@@ -75,7 +73,7 @@ function createNewDialog(dialogName: string, options?: DialogOptions, props?: Di
   let theDialog: DialogWindow | null = new BrowserWindow(dialogOptions) as DialogWindow
   
   if (process.platform === 'darwin') {
-    app.dock.show()
+    app.dock?.show()
 
     // Resizing from renderer is blocking process, so next is workaround to get smooth resize without IPC
     theDialog.setSizeAsync = function (width: number, height: number): void {
@@ -104,7 +102,7 @@ function createNewDialog(dialogName: string, options?: DialogOptions, props?: Di
 
     // On macos hide the dock icon when no active windows by this app.
     if (process.platform === 'darwin' && BrowserWindow.getAllWindows().length < 1) {
-      app.dock.hide()
+      app.dock?.hide()
     }
   })
 
@@ -146,7 +144,7 @@ export function about(): void {
   })
 
   // Close when loose focus, but only when non-dev because even the dev tool trigger the close.
-  if (!isDev && aboutDialog) {
+  if (app.isPackaged && aboutDialog) {
     aboutDialog.on('blur', () => aboutDialog.close())
   }
 }
@@ -440,7 +438,7 @@ function init(): void {
     ]
   }
 
-  if (isDev) {
+  if (!app.isPackaged) {
     template.push({
       label: 'Debug',
       submenu: [
@@ -453,13 +451,6 @@ function init(): void {
 
   // Set the global menu, as it is part of the dialogs.
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
-
-  // Enable context menus.
-  electronContextMenu({
-    showCopyImageAddress: false,
-    showSaveImageAs: false,
-    showInspectElement: isDev
-  })
 }
 
 // Do the initialization.

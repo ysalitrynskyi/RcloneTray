@@ -1,8 +1,7 @@
 'use strict'
 
 import * as path from 'path'
-import { Tray, Menu, clipboard, shell, MenuItemConstructorOptions } from 'electron'
-import isDev from 'electron-is-dev'
+import { app, Tray, Menu, clipboard, shell, MenuItemConstructorOptions } from 'electron'
 import * as settings from './settings'
 import * as rclone from './rclone'
 import * as dialogs from './dialogs'
@@ -364,7 +363,7 @@ function refreshTrayMenu(): void {
     return
   }
 
-  if (isDev) {
+  if (!app.isPackaged) {
     console.log('Refresh tray indicator menu')
   }
 
