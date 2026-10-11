@@ -54,12 +54,12 @@ type BookmarkAction =
  */
 function reportActionError(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error)
-  dialogs.notification(message)
+  dialogs.notification(message, 'error')
 }
 
 function bookmarkActionRouter(this: Bookmark | null, action: BookmarkAction, ...args: unknown[]): void {
   try {
-    const result = bookmarkActionRouterBody.call(this, action, ...args) as unknown
+    const result = bookmarkActionRouterBody.call(this, action, ...args)
     if (result && typeof (result as Promise<unknown>).then === 'function') {
       void (result as Promise<unknown>).catch(reportActionError)
     }
@@ -68,61 +68,58 @@ function bookmarkActionRouter(this: Bookmark | null, action: BookmarkAction, ...
   }
 }
 
-function bookmarkActionRouterBody(this: Bookmark | null, action: BookmarkAction, ...args: unknown[]): void {
+function bookmarkActionRouterBody(this: Bookmark | null, action: BookmarkAction, ...args: unknown[]): unknown {
   switch (action) {
     case 'mount':
-      if (this) rclone.mount(this)
+      if (this) return rclone.mount(this)
       break
     case 'unmount':
-      if (this) rclone.unmount(this)
+      if (this) return rclone.unmount(this)
       break
     case 'open-mounted':
-      if (this) rclone.openMountPoint(this)
+      if (this) return rclone.openMountPoint(this)
       break
     case 'download':
-      if (this) rclone.download(this)
+      if (this) return rclone.download(this)
       break
     case 'stop-downloading':
-      if (this) rclone.stopDownload(this)
+      if (this) return rclone.stopDownload(this)
       break
     case 'upload':
-      if (this) rclone.upload(this)
+      if (this) return rclone.upload(this)
       break
     case 'stop-uploading':
-      if (this) rclone.stopUpload(this)
+      if (this) return rclone.stopUpload(this)
       break
     case 'toggle-automatic-upload':
-      if (this) rclone.toggleAutomaticUpload(this)
+      if (this) return rclone.toggleAutomaticUpload(this)
       break
     case 'open-local':
-      if (this) rclone.openLocal(this)
+      if (this) return rclone.openLocal(this)
       break
     case 'serve-start':
-      if (this) rclone.serveStart(args[0] as ServeProtocol, this)
+      if (this) return rclone.serveStart(args[0] as ServeProtocol, this)
       break
     case 'serve-stop':
-      if (this) rclone.serveStop(args[0] as ServeProtocol, this)
+      if (this) return rclone.serveStop(args[0] as ServeProtocol, this)
       break
     case 'open-ncdu':
-      if (this) rclone.openNCDU(this)
+      if (this) return rclone.openNCDU(this)
       break
     case 'open-web-browser':
-      rclone.openExternalUrl(args[0] as string)
-      break
+      return rclone.openExternalUrl(args[0] as string)
     case 'open-config':
-      shell.openPath(rclone.getConfigFile())
-      break
+      return shell.openPath(rclone.getConfigFile())
     case 'reconnect':
-      if (this) rclone.reconnectRemote(this.$name)
+      if (this) return rclone.reconnectRemote(this.$name)
       break
     case 'delete-bookmark':
-      if (this) {
-        void rclone.deleteBookmark(this.$name).catch(reportActionError)
-      }
+      if (this) return rclone.deleteBookmark(this.$name)
       break
     default:
       console.error('No such action', action, args, this)
   }
+  return undefined
 }
 
 interface BookmarkMenuResult {
@@ -167,11 +164,12 @@ function generateBookmarkActionsSubmenu(bookmark: Bookmark): BookmarkMenuResult 
   // Mount
   const isMounted = rclone.getMountStatus(bookmark)
   const mountReady = typeof isMounted === 'string' && isMounted !== '*' && isMounted !== ''
+  const mountPending = isMounted === false && rclone.isMountPending(bookmark)
   submenu.push({
-    label: 'Mount',
+    label: mountPending ? 'Mount (waiting for another mount)' : 'Mount',
     click: () => bookmarkActionRouter.call(bookmark, 'mount'),
     checked: mountReady,
-    enabled: isMounted === false
+    enabled: isMounted === false && !mountPending
   })
 
   if (isMounted !== false) {
@@ -377,6 +375,7 @@ function refreshTrayMenu(): void {
   })
   menuItems.push({
     label: 'Stop all',
+    enabled: rclone.hasRunningWork(),
     click: () => rclone.stopAllProcesses()
   })
 
