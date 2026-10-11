@@ -8,20 +8,28 @@ const providers = JSON.parse(
 ) as Provider[]
 
 describe('masked inputs', () => {
-  it('masks exactly the IsPassword options', () => {
-    let sensitive = 0
+  it('masks every IsPassword option and secret-like Sensitive options only', () => {
+    let visibleSensitive = 0
     for (const item of providers) {
       for (const option of item.Options) {
         const kind = controlKind(option)
         if (option.IsPassword) {
           expect(kind, `${item.Prefix}.${option.Name}`).toBe('password')
-        } else {
+        } else if (!option.Sensitive) {
           expect(kind, `${item.Prefix}.${option.Name}`).not.toBe('password')
-          if (option.Sensitive) sensitive++
+        } else if (kind !== 'password') {
+          visibleSensitive++
         }
       }
     }
-    expect(sensitive).toBeGreaterThan(20)
+    expect(visibleSensitive).toBeGreaterThan(20)
+  })
+
+  it('masks OAuth tokens and client secrets', () => {
+    for (const [prefix, name] of [['drive', 'token'], ['drive', 'client_secret'], ['s3', 'secret_access_key']]) {
+      const option = providers.find((p) => p.Prefix === prefix)!.Options.find((o) => o.Name === name) as ProviderOption
+      expect(controlKind(option), `${prefix}.${name}`).toBe('password')
+    }
   })
 
   it('shows sftp host and user, ftp host and user, and list options as plain text', () => {

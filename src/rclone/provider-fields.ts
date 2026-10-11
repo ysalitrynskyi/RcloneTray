@@ -111,9 +111,18 @@ export function fieldKind(option: ProviderOption): NormalizedFieldKind {
 }
 
 /** Kind of control the form renders. Only real rclone passwords are masked; other sensitive options stay visible text. */
+const SecretLikeName = /(secret|token|passw|pass$|^key$|_key$|credentials|connection_string|sas_url|account_key|api_key)/i
+
+/**
+ * Masked inputs only for real secrets: IsPassword options, and Sensitive
+ * options whose name says secret, token or key. Host and user stay visible.
+ */
 export function controlKind(option: ProviderOption): NormalizedFieldKind {
   const kind = fieldKind(option)
-  return kind === 'password' && !option.IsPassword ? 'string' : kind
+  if (kind !== 'password' || option.IsPassword) {
+    return kind
+  }
+  return SecretLikeName.test(option.Name) && !/_file$/i.test(option.Name) ? 'password' : 'string'
 }
 
 /** Human text shown in the form. Never the raw SizeSuffix byte count. */
