@@ -5,9 +5,9 @@ Quick reference for whoever (human or agent) works on RcloneTray next.
 ## Stack
 
 - **Electron 44** + **TypeScript 5** (strict), compiled with `tsc` to `dist/`.
-- **electron-builder 24** for packaging (output → `release/`).
+- **electron-builder 26** for packaging (output → `release/`).
 - Tests: **vitest** (unit/integration) + **Playwright** (`_electron`) for E2E.
-- Bundled **rclone** binaries downloaded at `postinstall` into `rclone/` (gitignored).
+- Bundled **rclone** downloaded and SHA256-verified by `scripts/fetch-rclone.js` (run from `postinstall`) into `rclone/` (gitignored).
 
 ## Source map
 
@@ -60,9 +60,11 @@ npm run dist           # electron-builder for current platform -> release/
 
 ### rclone binaries
 
-`RCLONE_VERSION=v1.74.4 ./update-rclone-binaries.sh [darwin|win32|linux|all]` —
-the optional arg limits the download to one platform (CI uses this). CI/release
-pin `RCLONE_VERSION` for reproducible packaging. Runtime path resolution maps
+`node scripts/fetch-rclone.js [--platform darwin|win32|linux] [--arch all|amd64,arm64]`
+— defaults to the host platform/arch. The version comes from `package.json`
+`rcloneVersion` (override with `RCLONE_VERSION`); every zip is checked against
+rclone's SHA256SUMS. CI and release use it per platform; `scripts/stage-rclone.js`
+(electron-builder `beforePack`) copies only the target arch into the installer. Runtime path resolution maps
 Node's `process.arch` (`x64`/`ia32`) to rclone names (`amd64`/`386`) — see
 `RcloneArchMap` in `src/rclone.ts`. **If you add an arch, update that map.**
 
@@ -113,3 +115,17 @@ skipped on Windows).
 - Generated artifacts are not source: `dist/`, `coverage/`, `rclone/`,
   `release/`, `playwright-report/`, and `test-results/` should be regenerated,
   not restored from git.
+
+## Checking changes in the running app
+
+The unit suite cannot see dialogs, the tray or real rclone behaviour. Before a
+release, run the app against a scratch config (`RCLONETRAY_CONFIG_FILE`,
+`RCLONETRAY_SETTINGS_DIR`) with the real bundled rclone, and on Windows with
+WinFsp installed for mounts. A small Electron entry script that `require`s
+`dist/main.js` and then opens dialogs and calls `webContents.capturePage()` gives
+reliable screenshots in light and dark mode. Playwright's `_electron.launch` could
+not attach to Electron 44 on Windows (2026-10-11); the Linux CI E2E smoke test is
+unaffected.
+
+Gated real-rclone tests run when `RCLONETRAY_RCLONE_PATH` points at an rclone
+binary: `RCLONETRAY_RCLONE_PATH=$PWD/rclone/win32/amd64/rclone.exe npm test`.

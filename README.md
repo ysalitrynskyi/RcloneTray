@@ -35,7 +35,7 @@ A simple desktop app that lives in your system tray and gives [Rclone](https://r
 - **Bundled Rclone** — works out of the box, no separate install.
 - **Cross-platform** — Windows, macOS, and Linux.
 - **Automatic dark mode** — follows your system theme.
-- **Secure by default** — sandboxed renderer with context isolation.
+- **Secure by default** — sandboxed renderers with context isolation, a strict Content-Security-Policy, and checksum-verified bundled rclone.
 
 ## Install
 
@@ -71,6 +71,10 @@ xattr -d com.apple.quarantine /Applications/RcloneTray.app
 chmod +x RcloneTray-*.AppImage
 ./RcloneTray-*.AppImage
 ```
+
+On Ubuntu 23.10 and later the AppImage may refuse to start because AppArmor
+restricts the Chromium sandbox. Install the `.deb` instead, or see
+[Getting Started](docs/GETTING_STARTED.md#linux).
 
 ## Requirements
 

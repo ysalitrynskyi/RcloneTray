@@ -62,6 +62,12 @@ chmod +x RcloneTray-*.AppImage
 ./RcloneTray-*.AppImage
 ```
 
+If nothing happens on Ubuntu 23.10 or later and the terminal mentions the
+sandbox (`chrome-sandbox` / `user namespaces`), AppArmor is blocking Chromium's
+sandbox for AppImages. Prefer the `.deb` package, which is not affected. If you
+must use the AppImage, `./RcloneTray-*.AppImage --no-sandbox` starts it without
+the Chromium sandbox (less isolation for the app's windows).
+
 **Debian/Ubuntu (`.deb`):**
 
 ```bash

@@ -5,20 +5,28 @@ open-source project, so clear, focused contributions are very welcome.
 
 ## Development setup
 
-Requirements: [Node.js](https://nodejs.org) 20+ and npm.
+Requirements: [Node.js](https://nodejs.org) 22.12+ and npm.
 
 ```bash
 git clone https://github.com/ysalitrynskyi/RcloneTray
 cd RcloneTray
-npm install          # also downloads bundled rclone binaries (large, one-time)
+npm install          # also fetches Electron and the bundled rclone for your platform
 npm start            # build + launch the app
 ```
 
-`npm install` also downloads the Electron binary. Do not pass `--ignore-scripts`
-if you are going to run `npm run test:e2e` or `npm start`: those need Electron,
-and `--ignore-scripts` skips its download. To skip only the large rclone
-binaries, set `RCLONE_VERSION` and pass a platform, or run the checks that do
-not launch Electron (`typecheck`, `lint`, `test`).
+`npm install` runs `scripts/postinstall.js`, which installs the Electron binary
+(npm 11 can skip Electron's own install script) and downloads the bundled rclone
+for your platform, verified against rclone's SHA256SUMS. The rclone version is
+pinned in `package.json` (`rcloneVersion`); set `RCLONE_VERSION` to override it.
+If the download fails (offline, proxy), `npm install` still succeeds and prints a
+warning; run `npm run fetch-rclone` later. `HTTPS_PROXY` is honoured.
+
+With `--ignore-scripts` nothing is downloaded: `typecheck`, `lint` and `test`
+still work, but `npm start` needs `node node_modules/electron/install.js` and
+`npm run fetch-rclone` first.
+
+To fetch rclone for another platform (as CI does for installers):
+`node scripts/fetch-rclone.js --platform darwin --arch amd64,arm64`.
 
 ## Before you open a PR
 

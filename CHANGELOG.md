@@ -7,37 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-- Electron 44, chokidar 4, ESLint 9, and Vitest 3. `electron-is-dev` and `electron-context-menu` are gone. Dev mode is `!app.isPackaged`.
+## [1.8.0] - 2026-10-11
 
-### Fixed
-- Upload and Download dry-runs run in the background and can be cancelled by stopping the preview. The confirmation lists how many files would be copied or deleted. A password-free timeout no longer blocks the tray for 30 seconds.
-- Activity updates the open cards in place and can stop a job, clear finished jobs, and copy a log. Transfer progress from rclone's JSON stats is shown there and in the tray tooltip.
-- Preferences no longer saves an untouched auto-detected config path, accepts a stored 0, and does not let a hidden number field block Save. Sidebar tabs and provider tabs are keyboard reachable. Clicking help text does not toggle the bundled-rclone checkbox. The footer says running jobs keep their old settings.
-- Windows Console Browser opens in a console that stays open after an error. Linux tries several terminals and leaves the window open when rclone fails. A stale FUSE mount is unmounted before the next Mount. AppImage builds disable the Chromium sandbox namespace that Ubuntu 24.04 blocks, and Restart uses the AppImage path.
-- Linux Launch at login writes an XDG autostart file. Windows shows launch-at-login only when Startup approval agrees. Crypt and union remotes can be mounted, served, or deleted. A server that is still running stays in the menu after its protocol is turned off.
-- `npm install` on Windows downloads the current rclone build with a checksum check. Installers include only the target architecture. A release tag that does not match package.json fails the release workflow. The npm script that published installers is `release:publish`, so it no longer shadows `npm publish`.
+A large correctness release. The biggest fixes protect `rclone.conf`: adding or
+editing a remote could break that remote and silently damage others.
+
+### Fixed — your rclone config
+- Adding or editing a remote no longer rewrites the whole `rclone.conf`. Only that
+  remote's section changes; every other remote stays byte-for-byte, including
+  values with `;`, `#`, `=`, OAuth token JSON, UNC paths, non-UTF-8 bytes,
+  comments, indented or duplicated sections, and files without a final newline.
+- Only the fields you change are written. Defaults are no longer copied into the
+  config in the wrong units (S3 `chunk_size` became 5 GiB) or as the text
+  `[object Object]` (12 S3 options). Size, duration and list options show
+  rclone's own values, and on/off/unset options are a three-way choice.
+- Passwords are obscured through rclone's stdin, so any password works
+  (including `-` or one starting with `-`) and never appears in an error message.
+  Blank password fields are not stored; clearing one removes it.
+- An encrypted `rclone.conf` is detected and left read-only.
+- Config changes are serialised, a failed add removes only what it created, a
+  timestamped backup is kept (the three newest), and Windows retries a busy file.
+- Remote names follow rclone's rules; existing remotes with dots, spaces or long
+  names can be edited and deleted. Bucket backends (S3, B2, Swift, GCS, Azure
+  Blob, Oracle, QingStor, Storj) need a bucket or path before Upload/Download;
+  other remotes use their own root instead of the filesystem root.
+
+### Fixed — transfers, mounts and servers
+- Transfers are no longer killed because a log line or a file name contains
+  "Failed to", and success is decided by rclone's exit code. Failures notify
+  with rclone's last error.
+- Upload/Download previews run in the background, count exactly on large
+  trees, appear in Activity and can be stopped there.
+- Mounts are reported ready when rclone's filesystem is up and name the drive.
+  Windows mounts start one at a time, so they never share a drive letter.
+- HTTP and FTP serving start again (a mount-only flag made rclone exit). Each
+  server gets its own free port, the URL opens correctly, a password requires a
+  username, credentials stay out of the command line and the logs.
+- Automatic upload: changes made during an upload are kept, constant writes
+  cannot postpone it forever, Stop sticks, a missing folder is refused, it is
+  restored and catches up at the next launch, and `.DS_Store`/`Thumbs.db` are
+  ignored.
+- Quit stops running work, waits for it, never asks twice and never holds up a
+  logout or shutdown. Restart relaunches once.
+
+### Fixed — app and dialogs
+- Add, Edit and Preferences close after Save again, and ask before discarding
+  unsaved edits. A folder chosen with Browse is saved.
+- Errors from tray actions show as a normal message instead of "Unexpected
+  runtime error".
+- Edit opens with the right remote's data. Console Browser and OAuth Reconnect
+  work on Windows. The welcome message shows once. The update check compares
+  versions correctly.
+- Dialogs have a Content-Security-Policy and cannot navigate away. Tabs are
+  readable and keyboard reachable in light and dark mode. Windows and Linux show
+  a distinct tray icon while something is connected.
 
 ### Added
-- Bandwidth, transfers, checkers, max deletes, and a backup directory in the sync command when set. Serve can be read-only. Windows mounts can use network mode. Per-remote mount options and mount-at-launch. Test connection on Edit. Optional update check. First-run welcome. Light, dark, or system theme. Notification level. Automatic upload is restored on the next launch.
+- Activity: live progress, Stop, Clear finished, Copy log, readable log lines.
+- Preferences: theme (system/light/dark), notification level, update check,
+  bandwidth, transfers, checkers, max deletes, backup directory, read-only
+  serving, Windows network mode. Per-remote mount options and mount at launch.
+  Test connection in Edit. OAuth remotes (Google Drive, Dropbox, OneDrive and
+  others) open rclone's sign-in after you create them, and the tray offers
+  Reconnect while a token is missing.
+- Mount driver check (WinFsp, macFUSE/FUSE-T, fusermount) with an install link.
 
-### Fixed
-- Automatic upload keeps changes that happen while a copy is running, and a file that changes continuously cannot postpone the upload forever. Deleting or editing a remote stops its watcher. A missing folder is refused instead of spinning the CPU, symlinks are not followed, and `.DS_Store` / `Thumbs.db` are ignored. Windows and macOS watch the tree with one recursive watcher.
-- Windows mounts let WinFsp choose the drive letter, so two quick mounts no longer collide. `\\?\UNC\server\share` is treated as a root path. A saved config path on a missing drive falls back to the default config instead of leaving the tray with no menu.
-- A failed settings save no longer keeps the new values in memory. Restart is armed only when the app is actually quitting. Reopening a minimized dialog restores it. On Windows, clicking the tray icon opens the menu.
-- HTTP and FTP serving no longer pass the mount-only `--attr-timeout` flag. Each server binds its own free port. A serving password requires a username and is passed in the environment, not on the command line.
-- Edit and the other dialogs read their own window, not whichever window happens to be focused. Provider details are loaded before the form renders.
-- The bundled rclone helper is not chmod'd when it is already executable, and a read-only install is copied into the user data directory. The failure dialog can switch to the system rclone. The "Use bundled" preference applies on the next launch.
-- Google Drive, Dropbox and the other OAuth providers open rclone's sign-in after the remote is created, and the tray offers Reconnect while the token is missing.
-- Transfers are no longer killed because a log line contains "Failed to" or "Error while", and "finished" is reported only when rclone exits 0. Mount is reported only after the mount attempt survives, not on the debug line that precedes it. Serve URLs are read out of the brackets current rclone prints.
-- Custom arguments are split with quotes, and `--daemon`, log-file and mount-only flags are not applied to every command. Long-running rclone processes hide their console window on Windows and do not keep stdin or stdout open.
-- Quitting with active jobs asks asynchronously, then waits for those jobs to exit. An unexpected error offers Continue first, and Quit stops the rclone children.
-- Adding or editing a remote no longer rewrites `rclone.conf`. Other remotes stay byte-for-byte, including values that contain `;`, `#`, `=`, token JSON, UNC paths, comments and indented section headers. An encrypted config is left read-only.
-- New remotes are written with rclone's own units (`5Mi`, `1m`) and only the fields you changed. Blank passwords are not stored, a password can start with `-`, and clearing a saved password removes the key.
-- Size, duration and tristate provider fields show the human value. Options rclone hides from its configurator stay hidden. `True`/`TRUE` booleans stay checked.
-- Remote names follow rclone's rules (dots, spaces, `@` and longer names). A name that is a Windows drive letter is rejected. Update and delete still work for an existing remote whose name is unusual.
-- Upload and Download no longer default to `name:/`. SFTP, FTP and local use the remote's own root. Bucket backends (S3, B2, Swift, GCS, Azure Blob, Oracle, QingStor, Storj) require a bucket or path before a sync.
-- The first config file created by the app is mode 0600 on platforms that honour it, and the first write of a session keeps a timestamped backup.
+### Changed
+- Electron 44, electron-builder 26, chokidar 4, ESLint 9, Vitest 3; Node 22.12+
+  for development.
+- Bundled rclone v1.74.4. Every rclone download (npm install, CI and release)
+  is verified against rclone's SHA256SUMS, and installers ship only the target
+  architecture. Releases are published as drafts first.
+- The AppImage no longer turns off the Chromium sandbox. If it does not start on
+  Ubuntu 23.10+, use the `.deb` or see Getting Started.
 
 ## [1.7.0] - 2026-07-16
 
