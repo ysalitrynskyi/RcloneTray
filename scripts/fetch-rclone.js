@@ -20,7 +20,7 @@ const root = path.join(__dirname, '..')
 const nodeArchToRclone = { x64: 'amd64', ia32: '386', arm64: 'arm64', arm: 'arm-v7' }
 const platformArches = {
   darwin: ['amd64', 'arm64'],
-  win32: ['amd64', '386', 'arm64'],
+  win32: ['amd64', 'arm64'],
   linux: ['amd64', 'arm64', 'arm-v7']
 }
 const rcloneOsName = { darwin: 'osx', win32: 'windows', linux: 'linux' }

@@ -16,7 +16,7 @@ and download the file for your operating system:
 
 | Your computer | Download this |
 |---------------|---------------|
-| **Windows** | `RcloneTray-<version>-x64.exe` (or `-arm64`/`-ia32` for those CPUs) |
+| **Windows** | `RcloneTray-<version>-x64.exe` (or `-arm64` for ARM PCs; 32-bit Windows is not supported) |
 | **macOS** (Intel or Apple Silicon) | `RcloneTray-<version>-x64.dmg` or `-arm64.dmg` |
 | **Linux** | `RcloneTray-<version>-x86_64.AppImage` or the `.deb` package |
 

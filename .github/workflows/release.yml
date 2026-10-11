@@ -76,9 +76,9 @@ jobs:
           - os: windows-latest
             name: Windows
             rclone: win32
-            rclone_arch: amd64,386,arm64
-            builder_args: --win --x64 --ia32 --arm64
-            expected_artifacts: 3
+            rclone_arch: amd64,arm64
+            builder_args: --win --x64 --arm64
+            expected_artifacts: 2
           - os: ubuntu-latest
             name: Linux
             rclone: linux
@@ -158,8 +158,8 @@ jobs:
         run: |
           shopt -s nullglob
           files=(dist-release/*)
-          if [ "${#files[@]}" -lt 9 ]; then
-            echo "Expected at least 9 installer artifacts, got ${#files[@]}."
+          if [ "${#files[@]}" -lt 8 ]; then
+            echo "Expected at least 8 installer artifacts, got ${#files[@]}."
             printf '%s\n' "${files[@]}"
             exit 1
           fi
@@ -188,7 +188,7 @@ jobs:
             | Platform | File |
             |----------|------|
             | macOS (Intel + Apple Silicon) | `.dmg` / `.zip` |
-            | Windows (x64 / ia32 / arm64) | `.exe` (NSIS installer) |
+            | Windows (x64 / arm64) | `.exe` (NSIS installer) |
             | Linux (x64) | `.AppImage`, `.deb` |
 
             ### macOS first launch (unsigned app)

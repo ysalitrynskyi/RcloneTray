@@ -43,7 +43,7 @@ A simple desktop app that lives in your system tray and gives [Rclone](https://r
 
 | Platform | Architecture          | Files                  |
 | -------- | --------------------- | ---------------------- |
-| Windows  | x64, ia32, arm64      | `.exe` installer       |
+| Windows  | x64, arm64            | `.exe` installer       |
 | macOS    | Intel & Apple Silicon | `.dmg`, `.zip`         |
 | Linux    | x64                   | `.AppImage`, `.deb`    |
 

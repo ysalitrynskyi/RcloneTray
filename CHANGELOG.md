@@ -78,6 +78,8 @@ editing a remote could break that remote and silently damage others.
 - Bundled rclone v1.74.4. Every rclone download (npm install, CI and release)
   is verified against rclone's SHA256SUMS, and installers ship only the target
   architecture. Releases are published as drafts first.
+- 32-bit Windows (ia32) installers are no longer built: Electron 44 does not
+  support 32-bit Windows.
 - The AppImage no longer turns off the Chromium sandbox. If it does not start on
   Ubuntu 23.10+, use the `.deb` or see Getting Started.
 
