@@ -21,11 +21,28 @@ export interface ConfigTextEdit {
   removeSection?: boolean
 }
 
+const UTF8_BOM_BYTES = '\xEF\xBB\xBF'
+
 function splitBom(content: string): { bom: string; rest: string } {
+  if (content.startsWith(UTF8_BOM_BYTES)) {
+    return { bom: UTF8_BOM_BYTES, rest: content.slice(UTF8_BOM_BYTES.length) }
+  }
   if (content.charCodeAt(0) === 0xFEFF) {
     return { bom: '\uFEFF', rest: content.slice(1) }
   }
   return { bom: '', rest: content }
+}
+
+function toBytes(value: string): string {
+  return Buffer.from(value, 'utf8').toString('latin1')
+}
+
+function fromBytes(value: string): string {
+  return Buffer.from(value, 'latin1').toString('utf8')
+}
+
+function asciiTrim(value: string): string {
+  return value.replace(/^[ \t\r\n\v\f]+|[ \t\r\n\v\f]+$/g, '')
 }
 
 function splitLines(content: string): TextLine[] {
@@ -57,7 +74,7 @@ function newlineStyle(content: string): string {
 
 function headerName(text: string): string | null {
   const match = HEADER_RE.exec(text)
-  return match ? match[1].trim() : null
+  return match ? asciiTrim(match[1]) : null
 }
 
 export function isEncryptedRcloneConfig(content: string): boolean {
@@ -71,14 +88,14 @@ export function listConfigSections(content: string): string[] {
   for (const line of splitLines(rest)) {
     const name = headerName(line.text)
     if (name) {
-      names.push(name)
+      names.push(fromBytes(name))
     }
   }
   return names
 }
 
 function parseKeyLine(text: string): { key: string; value: string } | null {
-  const trimmed = text.trim()
+  const trimmed = asciiTrim(text)
   if (!trimmed || trimmed[0] === ';' || trimmed[0] === '#' || headerName(text) !== null) {
     return null
   }
@@ -86,7 +103,7 @@ function parseKeyLine(text: string): { key: string; value: string } | null {
   if (split < 0) {
     return null
   }
-  return { key: text.slice(0, split).trim(), value: text.slice(split + 1).trim() }
+  return { key: asciiTrim(text.slice(0, split)), value: asciiTrim(text.slice(split + 1)) }
 }
 
 function assertPlain(label: string, value: string): void {
@@ -106,7 +123,7 @@ export function editConfigText(original: string, edit: ConfigTextEdit): string {
     throw new ConfigEditError('This rclone config is encrypted. RcloneTray will not change it. Decrypt it, or edit it with rclone config.')
   }
   assertPlain('Remote name', edit.section)
-  if (!edit.section.trim()) {
+  if (!asciiTrim(edit.section)) {
     throw new ConfigEditError('Invalid remote name.')
   }
 
@@ -122,7 +139,8 @@ export function editConfigText(original: string, edit: ConfigTextEdit): string {
       sections.push({ index, name, end: lines.length })
     }
   })
-  const blocks = sections.filter((item) => item.name === edit.section)
+  const section = toBytes(edit.section)
+  const blocks = sections.filter((item) => item.name === section)
   const nl = newlineStyle(rest)
 
   if (edit.removeSection) {
@@ -142,12 +160,13 @@ export function editConfigText(original: string, edit: ConfigTextEdit): string {
     throw new ConfigEditError(`A remote named "${edit.section}" already exists.`)
   }
 
-  const assignments = edit.set || {}
-  const unset = new Set(edit.unset || [])
-  for (const [key, value] of Object.entries(assignments)) {
+  const assignments: Record<string, string> = {}
+  for (const [key, value] of Object.entries(edit.set || {})) {
     assertPlain(key, key)
     assertPlain(key, value)
+    assignments[toBytes(key)] = toBytes(value)
   }
+  const unset = new Set((edit.unset || []).map(toBytes))
 
   if (blocks.length === 0) {
     if (!edit.createType) {
@@ -158,10 +177,10 @@ export function editConfigText(original: string, edit: ConfigTextEdit): string {
       lines[lines.length - 1].ending = nl
     }
     const extra: TextLine[] = []
-    if (lines.length > 0 && lines[lines.length - 1].text.trim() !== '') {
+    if (lines.length > 0 && asciiTrim(lines[lines.length - 1].text) !== '') {
       extra.push({ text: '', ending: nl })
     }
-    extra.push({ text: `[${edit.section}]`, ending: nl }, { text: `type = ${edit.createType}`, ending: nl })
+    extra.push({ text: `[${section}]`, ending: nl }, { text: `type = ${toBytes(edit.createType)}`, ending: nl })
     for (const [key, value] of Object.entries(assignments)) {
       if (key === 'type') {
         continue

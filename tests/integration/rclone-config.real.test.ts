@@ -52,6 +52,13 @@ describeReal('real rclone config behaviour', () => {
     expect(dump(editConfigText(source, { section: 'b', removeSection: true })).b).toBeUndefined()
   })
 
+  it('reads a UTF-8 value and section name written by the editor', () => {
+    const original = Buffer.from('[old]\ntype = local\n', 'utf8').toString('latin1')
+    const edited = editConfigText(original, { section: 'Диск', createType: 'local', set: { _rclonetray_local_path_map: 'C:\\Users\\Иван\\Документы' } })
+    const parsed = dump(edited)
+    expect(parsed['Диск']._rclonetray_local_path_map).toBe('C:\\Users\\Иван\\Документы')
+  })
+
   it('does not read a comment line as a key', () => {
     const source = '[a]\ntype = local\n; region = old\n# region: old\n'
     const edited = editConfigText(source, { section: 'a', set: { region: 'new' } })

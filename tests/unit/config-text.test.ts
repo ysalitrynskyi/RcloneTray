@@ -1,9 +1,30 @@
-import { mkdtempSync, readFileSync, writeFileSync, lstatSync, readdirSync, symlinkSync, rmSync } from 'fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, lstatSync, readdirSync, symlinkSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
-import { join } from 'path'
-import { describe, expect, it, beforeEach } from 'vitest'
+import { basename, join } from 'path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { editConfigText, isEncryptedRcloneConfig, listConfigSections } from '../../src/rclone/config-text'
 import { backupConfigOnce, readConfigText, resetConfigSessionForTests, writeConfigText } from '../../src/rclone/config-repository'
+
+type FsCall = (...args: string[]) => void
+
+const hooks = vi.hoisted(() => ({
+  rename: null as null | ((real: FsCall, from: string, to: string) => void),
+  copy: null as null | ((real: FsCall, from: string, to: string) => void)
+}))
+
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>()
+  const patched = {
+    ...actual,
+    renameSync: (from: string, to: string) => (hooks.rename ? hooks.rename(actual.renameSync as FsCall, from, to) : actual.renameSync(from, to)),
+    copyFileSync: (from: string, to: string) => (hooks.copy ? hooks.copy(actual.copyFileSync as FsCall, from, to) : actual.copyFileSync(from, to))
+  }
+  return { ...patched, default: patched }
+})
+
+function sharingViolation(code: string): NodeJS.ErrnoException {
+  return Object.assign(new Error(code), { code })
+}
 
 const otherSections = [
   '[keepme]',
@@ -159,18 +180,140 @@ describe('config file writes', () => {
     dir = mkdtempSync(join(tmpdir(), 'rclonetray-cfg-'))
   })
 
-  it('backs up once and does not leave a temp file when the replace fails', () => {
+  afterEach(() => {
+    hooks.rename = null
+    hooks.copy = null
+  })
+
+  it('backs up once per path', () => {
     const filePath = join(dir, 'rclone.conf')
     writeFileSync(filePath, otherSections, { encoding: 'utf8' })
     const backup = backupConfigOnce(filePath)
     expect(backup).toBeTruthy()
     expect(readFileSync(backup as string, 'utf8')).toBe(otherSections)
     expect(backupConfigOnce(filePath)).toBeNull()
+  })
 
-    writeFileSync(join(dir, 'not-a-dir'), 'x')
-    expect(() => writeConfigText(join(dir, 'not-a-dir', 'rclone.conf'), 'nope')).toThrow()
-    expect(readdirSync(dir).some((name) => name.includes('.tmp'))).toBe(false)
-    expect(readConfigText(filePath)).toBe(otherSections)
+  it('does not count a failed backup copy as done', () => {
+    const filePath = join(dir, 'rclone.conf')
+    writeFileSync(filePath, otherSections, { encoding: 'utf8' })
+    hooks.copy = () => {
+      throw Object.assign(new Error('disk full'), { code: 'ENOSPC' })
+    }
+    expect(() => backupConfigOnce(filePath)).toThrow(/disk full/)
+    hooks.copy = null
+    const backup = backupConfigOnce(filePath)
+    expect(backup).toBeTruthy()
+    expect(readFileSync(backup as string, 'utf8')).toBe(otherSections)
+  })
+
+  it('keeps only the three newest backups', () => {
+    const filePath = join(dir, 'rclone.conf')
+    writeFileSync(filePath, otherSections, { encoding: 'utf8' })
+    const old = ['2020-01-01T00-00-00-000Z', '2020-01-02T00-00-00-000Z', '2020-01-03T00-00-00-000Z', '2020-01-04T00-00-00-000Z', '2020-01-05T00-00-00-000Z']
+    old.forEach((stamp) => writeFileSync(`${filePath}.${stamp}.bak`, 'old'))
+    writeFileSync(join(dir, 'rclone.conf.notes.txt'), 'keep me')
+    const backup = backupConfigOnce(filePath) as string
+    const remaining = readdirSync(dir).filter((name) => name.endsWith('.bak')).sort()
+    expect(remaining).toHaveLength(3)
+    expect(remaining).toContain(basename(backup))
+    expect(remaining).toContain('rclone.conf.2020-01-05T00-00-00-000Z.bak')
+    expect(remaining).toContain('rclone.conf.2020-01-04T00-00-00-000Z.bak')
+    expect(readdirSync(dir)).toContain('rclone.conf.notes.txt')
+  })
+
+  it('removes the temp file when the replace fails after it was written', () => {
+    const filePath = join(dir, 'rclone.conf')
+    writeFileSync(filePath, '[a]\ntype = local\n')
+    const attempted: string[] = []
+    hooks.rename = (_real, from) => {
+      attempted.push(from)
+      expect(readFileSync(from, 'utf8')).toBe('[a]\ntype = sftp\n')
+      throw sharingViolation('EXDEV')
+    }
+    expect(() => writeConfigText(filePath, '[a]\ntype = sftp\n')).toThrow(/EXDEV/)
+    expect(attempted).toHaveLength(1)
+    expect(readdirSync(dir)).toEqual(['rclone.conf'])
+    expect(readFileSync(filePath, 'utf8')).toBe('[a]\ntype = local\n')
+  })
+
+  it('retries a rename that fails with EPERM, EBUSY or EACCES, then succeeds', () => {
+    const filePath = join(dir, 'rclone.conf')
+    writeFileSync(filePath, '[a]\ntype = local\n')
+    for (const code of ['EPERM', 'EBUSY', 'EACCES']) {
+      let calls = 0
+      hooks.rename = (real, from, to) => {
+        calls++
+        if (calls <= 2) {
+          throw sharingViolation(code)
+        }
+        real(from, to)
+      }
+      writeConfigText(filePath, `[a]\ntype = ${code}\n`)
+      expect(calls).toBe(3)
+      expect(readFileSync(filePath, 'utf8')).toBe(`[a]\ntype = ${code}\n`)
+    }
+    expect(readdirSync(dir)).toEqual(['rclone.conf'])
+  })
+
+  it('gives up on a rename that keeps failing and leaves no temp file', () => {
+    const filePath = join(dir, 'rclone.conf')
+    writeFileSync(filePath, '[a]\ntype = local\n')
+    let calls = 0
+    hooks.rename = () => {
+      calls++
+      throw sharingViolation('EBUSY')
+    }
+    expect(() => writeConfigText(filePath, '[a]\ntype = sftp\n')).toThrow(/EBUSY/)
+    expect(calls).toBeGreaterThan(1)
+    expect(readdirSync(dir)).toEqual(['rclone.conf'])
+    expect(readFileSync(filePath, 'utf8')).toBe('[a]\ntype = local\n')
+  })
+
+  it('does not retry an error that is not a sharing violation', () => {
+    const filePath = join(dir, 'rclone.conf')
+    let calls = 0
+    hooks.rename = () => {
+      calls++
+      throw sharingViolation('ENOENT')
+    }
+    expect(() => writeConfigText(filePath, '[a]\n')).toThrow(/ENOENT/)
+    expect(calls).toBe(1)
+  })
+
+  it('keeps bytes that are not UTF-8 in other sections and writes UTF-8 values correctly', () => {
+    const filePath = join(dir, 'rclone.conf')
+    const before = Buffer.concat([
+      Buffer.from('[old]\ntype = local\nnote = caf', 'latin1'),
+      Buffer.from([0xE9, 0xFF, 0x80]),
+      Buffer.from('\n\n[target]\ntype = local\n', 'latin1')
+    ])
+    writeFileSync(filePath, before)
+    const next = editConfigText(readConfigText(filePath), { section: 'target', set: { path: 'C:\\Users\\Иван\\Документы' } })
+    writeConfigText(filePath, next)
+    const after = readFileSync(filePath)
+    expect(after.subarray(0, before.length - 'type = local\n'.length).equals(before.subarray(0, before.length - 'type = local\n'.length))).toBe(true)
+    expect(after.includes(Buffer.from([0xE9, 0xFF, 0x80]))).toBe(true)
+    expect(after.includes(Buffer.from('\uFFFD', 'utf8'))).toBe(false)
+    const tail = after.subarray(before.length).toString('utf8')
+    expect(tail).toBe('path = C:\\Users\\Иван\\Документы\n')
+  })
+
+  it('finds, creates and removes a remote with a non-ASCII name', () => {
+    const raw = Buffer.from('[Файл]\ntype = local\n\n[x]\ntype = local\n', 'utf8').toString('latin1')
+    expect(listConfigSections(raw)).toEqual(['Файл', 'x'])
+    expect(() => editConfigText(raw, { section: 'Файл', createType: 'local' })).toThrow(/already exists/)
+    const created = editConfigText(raw, { section: 'Диск', createType: 'local' })
+    expect(Buffer.from(created, 'latin1').toString('utf8')).toBe('[Файл]\ntype = local\n\n[x]\ntype = local\n\n[Диск]\ntype = local\n')
+    const removed = editConfigText(created, { section: 'Файл', removeSection: true })
+    expect(Buffer.from(removed, 'latin1').toString('utf8')).toBe('[x]\ntype = local\n\n[Диск]\ntype = local\n')
+  })
+
+  it('does not trim a trailing byte that is whitespace in latin1 but part of a UTF-8 letter', () => {
+    const raw = Buffer.from('[a]\ntype = local\npath = Р\n', 'utf8').toString('latin1')
+    const next = editConfigText(raw, { section: 'a', set: { other: 'x' } })
+    expect(Buffer.from(next, 'latin1').toString('utf8')).toBe('[a]\ntype = local\npath = Р\nother = x\n')
+    expect(editConfigText(raw, { section: 'a', set: { path: 'Р' } })).toBe(raw)
   })
 
   it('writes through a symlink instead of replacing it', () => {
