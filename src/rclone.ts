@@ -19,12 +19,11 @@ import { backupConfigOnce, readConfigText, writeConfigText } from './rclone/conf
 import { ConfigEditError, editConfigText, isEncryptedRcloneConfig, listConfigSections } from './rclone/config-text'
 import { assertAllowedExternalUrl } from './rclone/external-links'
 import {
-  buildActiveValues,
   controlKind,
   displayDefault,
+  findMissingRequiredOption,
   isBucketBasedPrefix,
   isOptionHidden,
-  isProviderOptionActive,
   providerDocsUrl,
   providerNeedsOAuth,
   remotePathSpec,
@@ -1051,20 +1050,10 @@ export function getBookmarks(): BookmarksCache {
 
 
 function validateBookmarkOptions(providerObject: Provider, values: Record<string, unknown>, existing?: Record<string, unknown>): void {
-  const activeValues = buildActiveValues(providerObject.Options, values, existing)
-  providerObject.Options.forEach((optionDefinition) => {
-    if (!isProviderOptionActive(optionDefinition, activeValues)) {
-      return
-    }
-    if (!optionDefinition.Required) {
-      return
-    }
-    const submitted = Object.prototype.hasOwnProperty.call(values, optionDefinition.Name) ? values[optionDefinition.Name] : undefined
-    const already = existing ? existing[optionDefinition.Name] : undefined
-    if (!submitted && !already) {
-      throw new Error(`${optionDefinition.$Label || optionDefinition.Name} field is required`)
-    }
-  })
+  const missing = findMissingRequiredOption(providerObject.Options, values, existing)
+  if (missing) {
+    throw new Error(`${missing.$Label || missing.Name} field is required`)
+  }
 }
 
 async function obscurePasswordFields(fields: { set: Record<string, string>; obscure: string[] }): Promise<void> {

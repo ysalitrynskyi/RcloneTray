@@ -158,6 +158,31 @@ export function buildActiveValues(
   return { ...active, ...stored, ...submitted }
 }
 
+/**
+ * First active Required option that has neither a submitted value, a stored
+ * value, nor a non-empty default. Untouched fields are not submitted, so a
+ * default shown in the form must satisfy Required.
+ */
+export function findMissingRequiredOption(
+  options: ProviderOption[],
+  submitted: Record<string, unknown>,
+  stored?: Record<string, unknown>
+): ProviderOption | undefined {
+  const activeValues = buildActiveValues(options, submitted, stored)
+  return options.find((option) => {
+    if (!option.Required || !isProviderOptionActive(option, activeValues)) {
+      return false
+    }
+    if (Object.prototype.hasOwnProperty.call(submitted, option.Name) && submitted[option.Name]) {
+      return false
+    }
+    if (stored && stored[option.Name]) {
+      return false
+    }
+    return !displayDefault(option)
+  })
+}
+
 export function isProviderOptionActive(option: ProviderOption, values: Record<string, unknown>): boolean {
   if (isOptionHidden(option.Hide)) {
     return false
