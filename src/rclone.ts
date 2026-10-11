@@ -10,8 +10,20 @@ import isDev from 'electron-is-dev'
 import * as settings from './settings'
 import * as dialogs from './dialogs'
 import { formatTerminalCommand, shouldAppendAutoConfirm } from './rclone/command'
-import { mergeBookmarkConfig } from './rclone/config-repository'
+import { backupConfigOnce, readConfigText, writeConfigText } from './rclone/config-repository'
+import { ConfigEditError, editConfigText, isEncryptedRcloneConfig, listConfigSections } from './rclone/config-text'
 import { assertAllowedExternalUrl } from './rclone/external-links'
+import {
+  displayDefault,
+  fieldKind,
+  isBucketBasedPrefix,
+  isOptionHidden,
+  isProviderOptionActive,
+  providerDocsUrl,
+  remotePathSpec,
+  selectConfigFields
+} from './rclone/provider-fields'
+import { assertNewRemoteName } from './rclone/remote-name'
 import { getJobStates as listJobStates, startJob, appendJobLog, updateJob, finishJob, JobKind } from './rclone/job-state'
 import { getSyncLocalPathError } from './rclone/path-safety'
 import {
@@ -19,7 +31,6 @@ import {
   BookmarksCache,
   ProvidersCache,
   Provider,
-  ProviderOption,
   RcloneCache,
   ProcessRegistry,
   ProcessRegistryEntry,
@@ -29,6 +40,7 @@ import {
 } from './types'
 
 export { enquoteCommand, shouldAppendAutoConfirm } from './rclone/command'
+export { isProviderOptionActive } from './rclone/provider-fields'
 
 /**
  * Define unsupported provider types
@@ -38,16 +50,8 @@ const UnsupportedRcloneProviders: string[] = [
   'crypt'
 ]
 
-/**
- * Define providers that require buckets and cannot works with root.
- */
-const BucketRequiredProviders: string[] = [
-  'b2',
-  'swift',
-  's3',
-  'gsc',
-  'hubic'
-]
+const ProviderAliases: Record<string, string> = {}
+const createsInFlight = new Set<string>()
 
 /**
  * Rclone executable filename
@@ -118,6 +122,7 @@ function prepareRcloneCommand(command: string[]): string[] {
   if (config) {
     command.unshift('--config', config)
   }
+  command.unshift('--ask-password=false')
 
   if (settings.get('rclone_use_bundled')) {
     prepareBundledRcloneBinary()
@@ -600,42 +605,32 @@ function updateProvidersCache(): Promise<void> {
       }
 
       Cache.providers = {}
+      Object.keys(ProviderAliases).forEach((key) => {
+        delete ProviderAliases[key]
+      })
       providers.forEach((provider) => {
         if (UnsupportedRcloneProviders.indexOf(provider.Prefix) !== -1) {
           return
         }
 
-        if (BucketRequiredProviders.indexOf(provider.Prefix) !== -1) {
-          provider.Options.unshift({
-            $Label: 'Bucket or Path',
-            $Type: 'string',
-            Name: '_rclonetray_remote_path',
-            Help: '',
-            Required: true,
-            Hide: false,
-            Advanced: false
-          })
-        }
-
-        provider.Options = provider.Options.map((optionDefinition) => {
-          optionDefinition.$Type = 'string'
-          if (optionDefinition.Default === true || optionDefinition.Default === false) {
-            optionDefinition.$Type = 'boolean'
-          } else if (typeof optionDefinition.Default === 'number' && !isNaN(optionDefinition.Default) && isFinite(optionDefinition.Default)) {
-            optionDefinition.$Type = 'number'
-          } else if (optionDefinition.IsPassword) {
-            optionDefinition.$Type = 'password'
-          }
-
-          optionDefinition.$Namespace = 'options'
-          return optionDefinition
+        const bucketBased = isBucketBasedPrefix(provider.Prefix)
+        provider.Options.unshift({
+          $Label: bucketBased ? 'Bucket or Path' : 'Remote path',
+          $Type: 'string',
+          Name: '_rclonetray_remote_path',
+          Help: bucketBased
+            ? 'Container, bucket, or a path inside it. Upload and Download refuse an empty path so a sync cannot delete every container.'
+            : 'Path on the remote. Leave this empty to use the remote default. For SFTP and FTP that is the home directory, not the filesystem root.',
+          Required: false,
+          Hide: false,
+          Advanced: false
         })
 
         provider.Options.push({
           $Label: 'Local Path',
           $Type: 'directory',
           Name: '_rclonetray_local_path_map',
-          Help: 'Set local directory that could coresponding to the remote root. This option is required in order to use upload and download functions.',
+          Help: 'Local directory that corresponds to the remote path. Required for upload and download.',
           Required: false,
           Hide: false,
           Advanced: false
@@ -645,23 +640,47 @@ function updateProvidersCache(): Promise<void> {
           $Label: 'Custom Args',
           $Type: 'text',
           Name: '_rclonetray_custom_args',
-          Help: `Custom arguments separated by space or new-line.\nRead more about options at https://rclone.org/${provider.Name}/#standard-options`,
+          Help: `Custom arguments separated by space or newline.\nRead more about options at ${providerDocsUrl(provider.Prefix)}`,
           Required: false,
           Hide: false,
           Advanced: true
         })
 
-        provider.Options = provider.Options.map((item) => {
-          if (!item.$Label) {
-            item.$Label = item.Name
+        provider.Options = provider.Options.map((optionDefinition) => {
+          const kind = fieldKind(optionDefinition)
+          if (kind === 'boolean') {
+            optionDefinition.$Type = 'boolean'
+          } else if (kind === 'tristate') {
+            optionDefinition.$Type = 'tristate'
+            optionDefinition.Default = displayDefault(optionDefinition)
+          } else if (kind === 'number') {
+            optionDefinition.$Type = 'number'
+          } else if (kind === 'password') {
+            optionDefinition.$Type = 'password'
+          } else if (kind === 'directory' || kind === 'file' || kind === 'text') {
+            optionDefinition.$Type = kind
+          } else {
+            optionDefinition.$Type = 'string'
+            if (optionDefinition.DefaultStr) {
+              optionDefinition.Default = displayDefault(optionDefinition)
+            }
+          }
+          optionDefinition.Hide = isOptionHidden(optionDefinition.Hide)
+          optionDefinition.$Namespace = 'options'
+          if (!optionDefinition.$Label) {
+            optionDefinition.$Label = optionDefinition.Name
               .replace(/_/g, ' ')
               .replace(/\w\S*/g, (string) => string.charAt(0).toUpperCase() + string.substring(1))
               .trim()
           }
-          return item
+          return optionDefinition
         })
 
         Cache.providers[provider.Prefix] = provider
+        ProviderAliases[provider.Prefix.toLowerCase()] = provider.Prefix
+        if (provider.Name) {
+          ProviderAliases[provider.Name.toLowerCase()] = provider.Prefix
+        }
       })
 
       fireRcloneUpdateActions()
@@ -720,6 +739,7 @@ function sync(method: 'upload' | 'download', bookmark: Bookmark, options: { skip
     console.error('Rclone', 'Sync', localPathError, bookmark)
     throw new Error(localPathError)
   }
+  assertBucketPath(bookmark)
 
   if (method === 'upload') {
     if (!fs.readdirSync(localPath).length) {
@@ -788,9 +808,12 @@ export async function getProviders(): Promise<ProvidersCache> {
 export function getProvider(providerName: string): Provider {
   if (Object.prototype.hasOwnProperty.call(Cache.providers, providerName)) {
     return Cache.providers[providerName]
-  } else {
-    throw new Error(`No such provider ${providerName}`)
   }
+  const alias = ProviderAliases[providerName.toLowerCase()]
+  if (alias && Cache.providers[alias]) {
+    return Cache.providers[alias]
+  }
+  throw new Error(`No such provider ${providerName}`)
 }
 
 /**
@@ -800,85 +823,50 @@ export function getBookmarks(): BookmarksCache {
   return Cache.bookmarks
 }
 
-/**
- * Check if bookmark options are valid
- */
-export function isProviderOptionActive(optionDefinition: ProviderOption, values: Record<string, unknown>): boolean {
-  if (optionDefinition.Hide) {
-    return false
-  }
 
-  if (!optionDefinition.Provider) {
-    return true
-  }
 
-  const invert = optionDefinition.Provider.startsWith('!')
-  const rules = (invert ? optionDefinition.Provider.substring(1) : optionDefinition.Provider)
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
-  const activeValues = Object.values(values).map((value) => String(value))
-  const match = rules.some((rule) => activeValues.includes(rule))
-  return invert ? !match : match
-}
-
-function toRcloneOptionValue(value: unknown): string {
-  if (value === undefined || value === null) {
-    return ''
-  }
-  return String(value)
-}
-
-function validateBookmarkOptions(providerObject: Provider, values: Record<string, unknown>): void {
+function validateBookmarkOptions(providerObject: Provider, values: Record<string, unknown>, existing?: Record<string, unknown>): void {
+  const activeValues = { ...(existing || {}), ...values }
   providerObject.Options.forEach((optionDefinition) => {
-    if (!isProviderOptionActive(optionDefinition, values)) {
+    if (!isProviderOptionActive(optionDefinition, activeValues)) {
       return
     }
-    const fieldName = optionDefinition.$Label || optionDefinition.Name
-    if (optionDefinition.Required && (!Object.prototype.hasOwnProperty.call(values, optionDefinition.Name) || !values[optionDefinition.Name])) {
-      throw new Error(`${fieldName} field is required`)
+    if (!optionDefinition.Required) {
+      return
+    }
+    const submitted = Object.prototype.hasOwnProperty.call(values, optionDefinition.Name) ? values[optionDefinition.Name] : undefined
+    const already = existing ? existing[optionDefinition.Name] : undefined
+    if (!submitted && !already) {
+      throw new Error(`${optionDefinition.$Label || optionDefinition.Name} field is required`)
     }
   })
 }
 
-/**
- * Update existing bookmark's fields
- */
-function updateBookmarkFields(bookmarkName: string, providerObject: Provider, values: Record<string, unknown>, oldValues?: Record<string, unknown>): void {
-  const valuesPlain: Record<string, string> = {}
-
-  providerObject.Options.forEach((optionDefinition) => {
-    const hasSubmittedValue = Object.prototype.hasOwnProperty.call(values, optionDefinition.Name)
-    if (!hasSubmittedValue && !isProviderOptionActive(optionDefinition, values)) {
-      return
+async function obscurePasswordFields(fields: { set: Record<string, string>; obscure: string[] }): Promise<void> {
+  for (const key of fields.obscure) {
+    const plain = fields.set[key]
+    let obscured = ''
+    try {
+      obscured = (await doCommand(['obscure', '--', plain])).trim()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`Could not store ${key}. ${message}`)
     }
-
-    if (optionDefinition.$Type === 'password') {
-      const newValue = toRcloneOptionValue(values[optionDefinition.Name])
-      const oldValue = toRcloneOptionValue(oldValues?.[optionDefinition.Name])
-      if (!oldValues || oldValue !== newValue) {
-        doCommandSync(['config', 'password', bookmarkName, optionDefinition.Name, newValue])
-      }
-    } else {
-      if (optionDefinition.$Type === 'boolean') {
-        if (optionDefinition.Name in values && ['true', 'yes', true, 1].includes(values[optionDefinition.Name] as unknown as string | number | boolean)) {
-          valuesPlain[optionDefinition.Name] = 'true'
-        } else {
-          valuesPlain[optionDefinition.Name] = 'false'
-        }
-      } else if (hasSubmittedValue) {
-        valuesPlain[optionDefinition.Name] = toRcloneOptionValue(values[optionDefinition.Name])
-      }
+    if (!obscured || obscured === plain) {
+      throw new Error(`Could not store ${key}.`)
     }
-  })
-
-  try {
-    mergeBookmarkConfig(getConfigFile(), bookmarkName, valuesPlain)
-  } catch (err) {
-    console.error(err)
-    throw new Error('Cannot update bookmark fields.')
+    fields.set[key] = obscured
   }
-  console.log('Rclone', 'Updated bookmark', bookmarkName)
+}
+
+function configErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof ConfigEditError) {
+    return error.message
+  }
+  if (error instanceof Error && error.message) {
+    return error.message
+  }
+  return fallback
 }
 
 /**
@@ -886,40 +874,50 @@ function updateBookmarkFields(bookmarkName: string, providerObject: Provider, va
  */
 export async function addBookmark(type: string, bookmarkName: string, values: Record<string, unknown>): Promise<void> {
   const providerObject = getProvider(type)
-  const configFile = getConfigFile()
-
-  if (!/^([a-zA-Z0-9\-_]{1,32})$/.test(bookmarkName)) {
-    throw new Error('Invalid name.\nName should be 1-32 chars long, and should contain only letters, digits - and _')
-  }
-
+  assertNewRemoteName(bookmarkName)
   validateBookmarkOptions(providerObject, values)
 
-  if (Object.prototype.hasOwnProperty.call(Cache.bookmarks, bookmarkName)) {
-    throw new Error(`There "${bookmarkName}" bookmark already`)
+  if (createsInFlight.has(bookmarkName)) {
+    throw new Error(`Remote "${bookmarkName}" is already being created.`)
   }
-
+  createsInFlight.add(bookmarkName)
+  const configFile = getConfigFile()
+  let original = ''
+  let wrote = false
   try {
-    const iniBlock = `\n[${bookmarkName}]\nconfig_automatic = no\ntype = ${type}\n`
-    fs.appendFileSync(configFile, iniBlock)
-    console.log('Rclone', 'Creating new bookmark', bookmarkName)
-  } catch (err) {
-    console.error(err)
-    throw new Error('Cannot create new bookmark')
-  }
-
-  try {
-    updateBookmarkFields(bookmarkName, providerObject, values)
+    original = readConfigText(configFile)
+    if (isEncryptedRcloneConfig(original)) {
+      throw new ConfigEditError('This rclone config is encrypted. RcloneTray will not change it. Decrypt it, or edit it with rclone config.')
+    }
+    if (listConfigSections(original).includes(bookmarkName)) {
+      throw new ConfigEditError(`A remote named "${bookmarkName}" already exists.`)
+    }
+    const fields = selectConfigFields(providerObject.Options, values, 'create')
+    await obscurePasswordFields(fields)
+    backupConfigOnce(configFile)
+    const next = editConfigText(original, {
+      section: bookmarkName,
+      createType: providerObject.Prefix,
+      set: fields.set,
+      unset: fields.unset
+    })
+    writeConfigText(configFile, next)
+    wrote = true
     await updateBookmarksCache()
     dialogs.notification(`Bookmark ${bookmarkName} is created`)
   } catch (err) {
-    console.error('Rclone', 'Reverting bookmark because of a problem', bookmarkName, err)
-    try {
-      await doCommand(['config', 'delete', bookmarkName])
-      await updateBookmarksCache()
-    } catch (rollbackError) {
-      console.error('Rclone', 'Cannot rollback failed bookmark creation:', rollbackError)
+    if (wrote) {
+      try {
+        writeConfigText(configFile, original)
+        await updateBookmarksCache()
+      } catch (rollbackError) {
+        console.error('Rclone', 'Cannot rollback failed bookmark creation:', rollbackError)
+      }
     }
-    throw new Error('Cannot write bookmark options to config.')
+    console.error('Rclone', 'Cannot create bookmark', bookmarkName, err)
+    throw new Error(configErrorMessage(err, 'Cannot write bookmark options to config.'))
+  } finally {
+    createsInFlight.delete(bookmarkName)
   }
 }
 
@@ -929,11 +927,35 @@ export async function addBookmark(type: string, bookmarkName: string, values: Re
 export async function updateBookmark(bookmark: Bookmark | string, values: Record<string, unknown>): Promise<void> {
   const bm = getBookmark(bookmark)
   const providerObject = getProvider(bm.type)
-  validateBookmarkOptions(providerObject, values)
-
-  updateBookmarkFields(bm.$name, providerObject, values, bm as unknown as Record<string, unknown>)
-  await updateBookmarksCache()
-  dialogs.notification(`Bookmark ${bm.$name} is updated.`)
+  validateBookmarkOptions(providerObject, values, bm as unknown as Record<string, unknown>)
+  const configFile = getConfigFile()
+  const original = readConfigText(configFile)
+  if (isEncryptedRcloneConfig(original)) {
+    throw new ConfigEditError('This rclone config is encrypted. RcloneTray will not change it. Decrypt it, or edit it with rclone config.')
+  }
+  if (!listConfigSections(original).includes(bm.$name)) {
+    throw new ConfigEditError(`Remote "${bm.$name}" does not exist. It was not recreated.`)
+  }
+  const fields = selectConfigFields(providerObject.Options, values, 'update', bm as unknown as Record<string, unknown>)
+  await obscurePasswordFields(fields)
+  if (Object.keys(fields.set).length === 0 && fields.unset.length === 0) {
+    dialogs.notification(`Bookmark ${bm.$name} is updated.`)
+    return
+  }
+  backupConfigOnce(configFile)
+  try {
+    const next = editConfigText(original, {
+      section: bm.$name,
+      set: fields.set,
+      unset: fields.unset
+    })
+    writeConfigText(configFile, next)
+    await updateBookmarksCache()
+    dialogs.notification(`Bookmark ${bm.$name} is updated.`)
+  } catch (err) {
+    console.error('Rclone', 'Cannot update bookmark', bm.$name, err)
+    throw new Error(configErrorMessage(err, 'Cannot update bookmark fields.'))
+  }
 }
 
 /**
@@ -941,7 +963,13 @@ export async function updateBookmark(bookmark: Bookmark | string, values: Record
  */
 export async function deleteBookmark(bookmark: Bookmark | string): Promise<void> {
   const bm = getBookmark(bookmark)
-  await doCommand(['config', 'delete', bm.$name])
+  const configFile = getConfigFile()
+  const original = readConfigText(configFile)
+  if (isEncryptedRcloneConfig(original)) {
+    throw new ConfigEditError('This rclone config is encrypted. RcloneTray will not change it.')
+  }
+  backupConfigOnce(configFile)
+  writeConfigText(configFile, editConfigText(original, { section: bm.$name, removeSection: true }))
   BookmarkProcessManager.killAll(bm.$name)
   await updateBookmarksCache()
   dialogs.notification(`Bookmark ${bm.$name} is deleted.`)
@@ -951,7 +979,21 @@ export async function deleteBookmark(bookmark: Bookmark | string): Promise<void>
  * Get bookmark remote with root
  */
 function getBookmarkRemoteWithRoot(bookmark: Bookmark): string {
-  return bookmark.$name + ':' + (bookmark._rclonetray_remote_path || '/')
+  return remotePathSpec(bookmark.$name, bookmark._rclonetray_remote_path)
+}
+
+function assertBucketPath(bookmark: Bookmark): void {
+  const provider = (() => {
+    try {
+      return getProvider(bookmark.type)
+    } catch {
+      return null
+    }
+  })()
+  const bucketBased = isBucketBasedPrefix(bookmark.type) || isBucketBasedPrefix(provider?.Prefix)
+  if (bucketBased && !bookmark._rclonetray_remote_path) {
+    throw new Error(`Set a bucket or path for ${bookmark.$name} before uploading or downloading. Syncing the account root can delete every container.`)
+  }
 }
 
 /**
@@ -1438,7 +1480,11 @@ export function init(): void {
   }
 
   if (!fs.existsSync(getConfigFile())) {
-    fs.appendFileSync(getConfigFile(), '')
+    fs.writeFileSync(getConfigFile(), '', { mode: 0o600 })
+  }
+
+  if (isEncryptedRcloneConfig(readConfigText(getConfigFile()))) {
+    dialogs.notification('rclone.conf is encrypted. RcloneTray will not edit it. Decrypt it, or change it with rclone config.')
   }
 
   chokidar.watch(getConfigFile(), {

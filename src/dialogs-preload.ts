@@ -14,9 +14,10 @@ interface OptionFieldDefinition {
   Value?: string | number | boolean
   Required?: boolean
   Provider?: string
-  Examples?: Array<{ Value: string | number; Label?: string }>
+  Examples?: Array<{ Value: string | number; Label?: string; Help?: string; Provider?: string }>
   Advanced?: boolean
-  Hide?: boolean
+  Hide?: boolean | number
+  Sensitive?: boolean
 }
 
 interface TabsElement extends HTMLDivElement {
@@ -66,6 +67,55 @@ function selectOptionFieldDependencies(): void {
 function setOptionFieldDependencyValue(key: string, value: string): void {
   optionFieldDependencyValues[key] = value
   selectOptionFieldDependencies()
+}
+
+function optionIsHidden(hide: unknown): boolean {
+  if (hide === true) {
+    return true
+  }
+  if (typeof hide === 'number' && Number.isFinite(hide)) {
+    return (hide & 2) !== 0
+  }
+  return false
+}
+
+function parseBoolLoose(value: unknown): boolean {
+  if (value === true || value === 1) {
+    return true
+  }
+  if (typeof value !== 'string') {
+    return false
+  }
+  const text = value.trim().toLowerCase()
+  return text === 'true' || text === 'yes' || text === 't' || text === '1' || text === 'on'
+}
+
+function exampleMatchesProvider(providerRule: string | undefined): boolean {
+  if (!providerRule) {
+    return true
+  }
+  const activeValues = Object.values(optionFieldDependencyValues)
+  const invert = providerRule.startsWith('!')
+  const rules = (invert ? providerRule.substring(1) : providerRule).split(',').map((item) => item.trim()).filter(Boolean)
+  const match = rules.some((rule) => activeValues.includes(rule))
+  return invert ? !match : match
+}
+
+function trackField(inputField: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): void {
+  const token = (): string => inputField instanceof HTMLInputElement && inputField.type === 'checkbox'
+    ? (inputField.checked ? '1' : '0')
+    : inputField.value
+  inputField.dataset.track = '1'
+  inputField.dataset.initial = token()
+  const mark = (): void => {
+    if (token() !== inputField.dataset.initial) {
+      inputField.dataset.dirty = '1'
+    } else {
+      delete inputField.dataset.dirty
+    }
+  }
+  inputField.addEventListener('input', mark)
+  inputField.addEventListener('change', mark)
 }
 
 function createHelpTextElement(help: string): HTMLDivElement {
@@ -220,6 +270,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     Array.from(form.elements).forEach(element => {
       const el = element as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
       if (el.name && !el.disabled && !(el.type === 'radio' && !(el as HTMLInputElement).checked)) {
+        if (el.dataset.track === '1' && el.dataset.dirty !== '1') {
+          return
+        }
         const fieldValue = el.type === 'checkbox' ? (el as HTMLInputElement).checked : el.value
         const [namespace, name] = el.name.split('.')
         if (namespace && name) {
@@ -332,7 +385,23 @@ const htmlElementsApi = {
       case 'boolean':
         inputField = document.createElement('input')
         inputField.type = 'checkbox'
-        ;(inputField as HTMLInputElement).checked = [true, 'true', 1, '1'].includes(value as string | number | boolean)
+        ;(inputField as HTMLInputElement).checked = parseBoolLoose(value)
+        break
+      case 'tristate':
+        inputField = document.createElement('select')
+        ;[
+          ['unset', 'Unset (default)'],
+          ['true', 'True'],
+          ['false', 'False']
+        ].forEach(([itemValue, label]) => {
+          const option = document.createElement('option')
+          option.value = itemValue
+          option.textContent = label
+          if (String(value || 'unset') === itemValue) {
+            option.selected = true
+          }
+          inputField.appendChild(option)
+        })
         break
       case 'number':
       case 'numeric':
@@ -343,7 +412,11 @@ const htmlElementsApi = {
       case 'password':
         inputField = document.createElement('input')
         inputField.type = 'password'
-        inputField.value = (value as string) || ''
+        inputField.value = ''
+        if (value !== undefined && value !== null && String(value) !== '') {
+          inputField.placeholder = 'Leave blank to keep the saved value'
+          inputField.dataset.saved = '1'
+        }
         break
       case 'directory':
         inputField = document.createElement('input')
@@ -390,6 +463,7 @@ const htmlElementsApi = {
     const browseType = (inputField as HTMLInputElement & { _browseType?: string })._browseType
     if (browseType) {
       const browseButton = document.createElement('button')
+      browseButton.type = 'button'
       browseButton.style.margin = '.3rem 0'
       browseButton.innerText = 'Browse'
       browseButton.addEventListener('click', async (event) => {
@@ -416,9 +490,15 @@ const htmlElementsApi = {
       inputField.setAttribute('list', inputFieldOptions.id)
       td.appendChild(inputFieldOptions)
       optionFieldDefinition.Examples.forEach((item) => {
+        if (!exampleMatchesProvider(item.Provider)) {
+          return
+        }
         const datalistOption = document.createElement('option')
         datalistOption.value = String(item.Value)
         datalistOption.innerText = item.Label || String(item.Value)
+        if (item.Provider) {
+          datalistOption.dataset.provider = item.Provider
+        }
         inputFieldOptions.appendChild(datalistOption)
       })
 
@@ -433,9 +513,9 @@ const htmlElementsApi = {
         const menuItems: Array<{ label: string; value: string }> = []
         inputFieldOptions.childNodes.forEach((childNode) => {
           const optionNode = childNode as HTMLOptionElement
-          if (optionNode.value) {
+          if (optionNode.value && exampleMatchesProvider(optionNode.dataset.provider)) {
             menuItems.push({
-              label: optionNode.value,
+              label: optionNode.label || optionNode.value,
               value: optionNode.value
             })
           }
@@ -480,6 +560,25 @@ const htmlElementsApi = {
         fieldHelpText.className = 'label-help'
       }
     }
+
+    if (optionFieldDefinition.$Type === 'password' && inputField.dataset.saved === '1') {
+      const clearLabel = document.createElement('label')
+      const clearBox = document.createElement('input')
+      clearBox.type = 'checkbox'
+      clearLabel.appendChild(clearBox)
+      clearLabel.appendChild(document.createTextNode(' Clear saved value'))
+      clearBox.addEventListener('change', () => {
+        if (clearBox.checked) {
+          inputField.value = ''
+          inputField.dataset.dirty = '1'
+        } else {
+          delete inputField.dataset.dirty
+        }
+      })
+      td.appendChild(clearLabel)
+    }
+
+    trackField(inputField)
 
     // Make some fields required.
     if (optionFieldDefinition.Required) {
@@ -554,7 +653,7 @@ contextBridge.exposeInMainWorld('api', {
         }
 
         resetOptionFieldDependencies()
-        const visibleOptions = provider.Options.filter((item) => item.Hide !== true)
+        const visibleOptions = provider.Options.filter((item) => !optionIsHidden(item.Hide))
 
         const connectionFields = visibleOptions.filter((item) => {
           return item.Name !== '_rclonetray_local_path_map' && item.Advanced !== true

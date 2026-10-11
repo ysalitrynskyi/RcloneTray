@@ -102,6 +102,9 @@ If you would rather not install a FUSE driver, use the WebDAV serve feature inst
    pick a provider).
 5. Mount, sync, or serve the remote from the tray menu. Use **Activity** to see running jobs and recent rclone output.
 
+RcloneTray changes only the remote you create, edit or delete. Other sections of
+`rclone.conf` are left byte-for-byte, and an encrypted config is not modified.
+
 **Prefer the terminal?** You don't have to use the dialog at all. Run `rclone config`
 in your terminal to create or edit remotes — RcloneTray reads the same
 `rclone.conf`, so anything you configure there shows up in the tray automatically

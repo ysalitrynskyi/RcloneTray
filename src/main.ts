@@ -8,7 +8,7 @@ import * as tray from './tray'
 import * as rclone from './rclone'
 import * as settings from './settings'
 import { DialogWindow, SettingKey, Settings } from './types'
-import { assertBookmarkName, assertProviderName, assertSettingKey, assertSettingsPatch } from './ipc/validation'
+import { assertBookmarkName, assertExistingRemoteName, assertProviderName, assertSettingKey, assertSettingsPatch } from './ipc/validation'
 
 // Error handler
 
@@ -59,11 +59,11 @@ ipcMain.handle('get-rclone-book', (_event: IpcMainInvokeEvent, type: string, nam
 })
 
 ipcMain.handle('get-rclone-delete-book', (_event: IpcMainInvokeEvent, name: string) => {
-  return rclone.deleteBookmark(assertBookmarkName(name))
+  return rclone.deleteBookmark(assertExistingRemoteName(name))
 })
 
 ipcMain.handle('get-rclone-update-book', (_event: IpcMainInvokeEvent, name: string, options: Record<string, unknown>) => {
-  return rclone.updateBookmark(assertBookmarkName(name), options)
+  return rclone.updateBookmark(assertExistingRemoteName(name), options)
 })
 
 ipcMain.handle('get-rclone-get-config-file', () => {

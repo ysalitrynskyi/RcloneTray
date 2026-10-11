@@ -62,13 +62,16 @@
 
         window.api.renderBookmarkSettings(settingsWrap, props.type, { options: props });
 
+        const saveButton = theForm.querySelector('button[type="submit"]');
         theForm.addEventListener('submit', async function (event) {
           event.preventDefault();
+          if (saveButton) saveButton.disabled = true;
           const data = window.electronAPI.getTheFormData(this);
           try {
             await $main.rclone.updateBookmark(props.$name, data.options || {});
             window.close();
           } catch (error) {
+            if (saveButton) saveButton.disabled = false;
             window.electronAPI.errorBox(error.message || String(error));
           }
         });

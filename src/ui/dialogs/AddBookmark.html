@@ -43,7 +43,7 @@
         <input type="hidden" name="type" id="type-field">
         <div class="field">
           <label for="bookmark-name">Name <small>required</small></label>
-          <input type="text" name="name" id="bookmark-name" maxlength="32" placeholder="My Cloud Storage" required>
+          <input type="text" name="name" id="bookmark-name" placeholder="my-cloud" required>
         </div>
 
         <div id="bookmark-settings"></div>
@@ -210,17 +210,21 @@
         }
       });
 
+      const createButton = theForm.querySelector('button[type="submit"]');
       theForm.addEventListener('submit', async function (event) {
         event.preventDefault();
+        if (createButton) createButton.disabled = true;
         const data = window.electronAPI.getTheFormData(this);
         if (!data.name || !String(data.name).trim()) {
           window.electronAPI.errorBox('Please enter a name for this remote.');
+          if (createButton) createButton.disabled = false;
           return;
         }
         try {
           await $main.rclone.addBookmark(data.type, data.name, data.options || {});
           window.close();
         } catch (error) {
+          if (createButton) createButton.disabled = false;
           window.electronAPI.errorBox(error.message || String(error));
         }
       });

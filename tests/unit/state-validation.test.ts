@@ -15,8 +15,11 @@ describe('IPC validation helpers', () => {
 
   it('validates bookmark and provider names', () => {
     expect(assertBookmarkName('remote_1')).toBe('remote_1')
+    expect(assertBookmarkName('my.remote')).toBe('my.remote')
+    expect(assertBookmarkName('has space')).toBe('has space')
     expect(assertProviderName('s3')).toBe('s3')
-    expect(() => assertBookmarkName('../escape')).toThrow('Invalid remote name')
+    expect(() => assertBookmarkName('../escape')).toThrow(/Remote names/)
+    expect(() => assertBookmarkName('-bad')).toThrow(/cannot start/)
     expect(() => assertProviderName('')).toThrow('Invalid provider name')
   })
 })

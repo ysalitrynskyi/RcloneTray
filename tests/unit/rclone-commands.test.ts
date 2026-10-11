@@ -224,6 +224,7 @@ describe('enquoteCommand', () => {
 describe('shouldAppendAutoConfirm', () => {
   it('does not add --auto-confirm to read-only startup commands', () => {
     expect(shouldAppendAutoConfirm(['version'])).toBe(false)
+    expect(shouldAppendAutoConfirm(['obscure', 'secret'])).toBe(false)
     expect(shouldAppendAutoConfirm(['config', 'providers'])).toBe(false)
     expect(shouldAppendAutoConfirm(['config', 'dump'])).toBe(false)
     expect(shouldAppendAutoConfirm(['config', 'file'])).toBe(false)

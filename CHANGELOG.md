@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Adding or editing a remote no longer rewrites `rclone.conf`. Other remotes stay byte-for-byte, including values that contain `;`, `#`, `=`, token JSON, UNC paths, comments and indented section headers. An encrypted config is left read-only.
+- New remotes are written with rclone's own units (`5Mi`, `1m`) and only the fields you changed. Blank passwords are not stored, a password can start with `-`, and clearing a saved password removes the key.
+- Size, duration and tristate provider fields show the human value. Options rclone hides from its configurator stay hidden. `True`/`TRUE` booleans stay checked.
+- Remote names follow rclone's rules (dots, spaces, `@` and longer names). A name that is a Windows drive letter is rejected. Update and delete still work for an existing remote whose name is unusual.
+- Upload and Download no longer default to `name:/`. SFTP, FTP and local use the remote's own root. Bucket backends (S3, B2, Swift, GCS, Azure Blob, Oracle, QingStor, Storj) require a bucket or path before a sync.
+- The first config file created by the app is mode 0600 on platforms that honour it, and the first write of a session keeps a timestamped backup.
+
 ## [1.7.0] - 2026-07-16
 
 ### Added

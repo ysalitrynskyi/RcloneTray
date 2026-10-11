@@ -1,9 +1,9 @@
 export function shouldAppendAutoConfirm(command: string[]): boolean {
   const [scope, action] = command
-  if (scope === 'version') {
+  if (scope === 'version' || scope === 'obscure' || scope === 'listremotes') {
     return false
   }
-  if (scope === 'config' && ['dump', 'providers', 'file'].includes(action || '')) {
+  if (scope === 'config' && ['dump', 'providers', 'file', 'show'].includes(action || '')) {
     return false
   }
   return true

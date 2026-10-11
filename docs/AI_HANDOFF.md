@@ -17,7 +17,10 @@ Quick reference for whoever (human or agent) works on RcloneTray next.
 | `src/tray.ts` | System tray icon + dynamic menu (per-bookmark actions) |
 | `src/rclone.ts` | rclone orchestration, bookmark CRUD, mount/sync/serve |
 | `src/rclone/command.ts` | command formatting, `--auto-confirm` policy, terminal-safe quoting |
-| `src/rclone/config-repository.ts` | atomic `rclone.conf` read/write helpers |
+| `src/rclone/config-repository.ts` | config backup and symlink-safe write |
+| `src/rclone/config-text.ts` | byte-preserving edits of one `rclone.conf` section |
+| `src/rclone/provider-fields.ts` | provider field types, Hide bitmask, values to write |
+| `src/rclone/remote-name.ts` | rclone remote-name rules |
 | `src/rclone/path-safety.ts` | local sync path guards (root/drive protection) |
 | `src/rclone/job-state.ts` | central job/activity state and log tails |
 | `src/rclone/external-links.ts` | external URL protocol allow-list |
@@ -36,6 +39,11 @@ All dialog windows use `contextIsolation: true`, `nodeIntegration: false`,
 preload bridge. External links go through an allow-list before `shell.openExternal`.
 Keep it that way. Destructive sync operations must keep dry-run confirmation and
 root/drive path guards.
+
+`rclone.conf` is not rewritten as a whole. Create, update and delete change only
+the named section (`src/rclone/config-text.ts`). Passwords are obscured with
+`rclone obscure`. An encrypted config (`RCLONE_ENCRYPT_V0:`) is read-only.
+Every rclone child is started with `--ask-password=false`.
 
 ## Commands
 
@@ -63,7 +71,8 @@ Node's `process.arch` (`x64`/`ia32`) to rclone names (`amd64`/`386`) — see
 The app honors these (used by E2E and power users):
 
 - `RCLONETRAY_TEST=1` — disables dev-only inspector/electron-reload.
-- `RCLONETRAY_RCLONE_PATH` — absolute path to an rclone binary (or stub).
+- `RCLONETRAY_RCLONE_PATH` — absolute path to an rclone binary (or stub). Tests
+  that need a real rclone skip when it is unset, so CI without a binary still passes.
 - `RCLONETRAY_CONFIG_FILE` / `RCLONETRAY_CONFIG_DIR` — rclone config location.
 - `RCLONETRAY_SETTINGS_DIR` — directory for `settings.json`.
 

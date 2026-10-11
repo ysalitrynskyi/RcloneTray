@@ -79,7 +79,8 @@ sudo dpkg -i RcloneTray-*.deb
 2. Click the tray icon → **New Remote**.
 3. Pick your storage **provider** (e.g. Google Drive, Dropbox, S3).
 4. Fill in the connection details and **Save**. RcloneTray uses the same config
-   as rclone, so existing rclone remotes show up automatically.
+   as rclone and changes only that remote. Existing rclone remotes show up
+   automatically. An encrypted `rclone.conf` is shown as read-only.
 5. Click the remote in the tray menu to **Mount**, **Sync**, or **Serve** it.
 6. Open **Activity** from the tray menu when you want to see running jobs, recent
    logs, or failures.

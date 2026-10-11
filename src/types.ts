@@ -29,13 +29,19 @@ export type SettingValue = Settings[SettingKey]
 export interface ProviderOption {
   Name: string
   Help: string
-  Default?: string | number | boolean
+  Default?: unknown
+  DefaultStr?: string
+  ValueStr?: string
+  Value?: unknown
+  Type?: string
   Required: boolean
   Advanced: boolean
-  Hide: boolean
+  /** rclone sends a bitmask. true is accepted for older callers. */
+  Hide?: boolean | number
   IsPassword?: boolean
+  Sensitive?: boolean
   Provider?: string
-  Examples?: Array<{ Value: string | number; Label?: string }>
+  Examples?: Array<{ Value: string | number; Label?: string; Help?: string; Provider?: string }>
   $Type?: string
   $Label?: string
   $Namespace?: string

@@ -1,4 +1,7 @@
 import { SettingKey, Settings } from '../types'
+import { assertExistingRemoteName, assertNewRemoteName } from '../rclone/remote-name'
+
+export { assertExistingRemoteName, assertNewRemoteName }
 
 const SettingKeys: SettingKey[] = [
   'tray_menu_show_type',
@@ -35,10 +38,7 @@ export function assertSettingsPatch(value: unknown): Partial<Settings> {
 }
 
 export function assertBookmarkName(value: unknown): string {
-  if (typeof value !== 'string' || !/^([a-zA-Z0-9\-_]{1,32})$/.test(value)) {
-    throw new Error('Invalid remote name.')
-  }
-  return value
+  return assertNewRemoteName(value)
 }
 
 export function assertProviderName(value: unknown): string {
