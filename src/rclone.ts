@@ -19,8 +19,8 @@ import { backupConfigOnce, readConfigText, writeConfigText } from './rclone/conf
 import { ConfigEditError, editConfigText, isEncryptedRcloneConfig, listConfigSections } from './rclone/config-text'
 import { assertAllowedExternalUrl } from './rclone/external-links'
 import {
+  controlKind,
   displayDefault,
-  fieldKind,
   isBucketBasedPrefix,
   isOptionHidden,
   isProviderOptionActive,
@@ -790,7 +790,7 @@ function updateProvidersCache(): Promise<void> {
         })
 
         provider.Options = provider.Options.map((optionDefinition) => {
-          const kind = fieldKind(optionDefinition)
+          const kind = controlKind(optionDefinition)
           if (kind === 'boolean') {
             optionDefinition.$Type = 'boolean'
           } else if (kind === 'tristate') {

@@ -110,6 +110,12 @@ export function fieldKind(option: ProviderOption): NormalizedFieldKind {
   return 'string'
 }
 
+/** Kind of control the form renders. Only real rclone passwords are masked; other sensitive options stay visible text. */
+export function controlKind(option: ProviderOption): NormalizedFieldKind {
+  const kind = fieldKind(option)
+  return kind === 'password' && !option.IsPassword ? 'string' : kind
+}
+
 /** Human text shown in the form. Never the raw SizeSuffix byte count. */
 export function displayDefault(option: ProviderOption): string {
   if (fieldKind(option) === 'tristate') {
