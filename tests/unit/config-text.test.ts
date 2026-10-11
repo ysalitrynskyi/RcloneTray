@@ -77,6 +77,15 @@ describe('config text editor', () => {
     expect(() => editConfigText(encrypted, { section: 'x', createType: 'local' })).toThrow(/encrypted/)
   })
 
+  it('starts a new line when the last line has no trailing newline (LF)', () => {
+    expect(editConfigText('[a]\ntype = s3', { section: 'a', set: { region: 'x' } })).toBe('[a]\ntype = s3\nregion = x\n')
+    expect(editConfigText('[a]', { section: 'a', set: { region: 'x' } })).toBe('[a]\nregion = x\n')
+  })
+
+  it('starts a new line when the last line has no trailing newline (CRLF)', () => {
+    expect(editConfigText('[a]\r\ntype = s3', { section: 'a', set: { region: 'x' } })).toBe('[a]\r\ntype = s3\r\nregion = x\r\n')
+  })
+
   it('removes one section without touching the neighbours', () => {
     const source = '[a]\ntype = local\nsecret = ab#cd\n\n[b]\ntype = sftp\n\n[c]\ntoken = {"a":"b="}\n'
     const next = editConfigText(source, { section: 'b', removeSection: true })

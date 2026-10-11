@@ -198,11 +198,15 @@ export function editConfigText(original: string, edit: ConfigTextEdit): string {
     kept.push(line)
   }
 
-  for (const [key, value] of Object.entries(assignments)) {
-    if (seen.has(key)) {
-      continue
+  const missing = Object.entries(assignments).filter(([key]) => !seen.has(key))
+  if (missing.length > 0) {
+    const tail = kept.length > 0 ? kept[kept.length - 1] : lines[found.index]
+    if (tail.ending === '') {
+      tail.ending = nl
     }
-    kept.push({ text: `${key} = ${value}`, ending: nl })
+    for (const [key, value] of missing) {
+      kept.push({ text: `${key} = ${value}`, ending: nl })
+    }
   }
 
   return bom + joinLines(lines.slice(0, found.index + 1).concat(kept, lines.slice(end)))
