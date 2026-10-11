@@ -613,6 +613,18 @@ class BookmarkProcessManager {
     fireRcloneUpdateActions()
   }
 
+  private markMounted(): void {
+    this.clearMountTimer()
+    if (!this.exists() || this.get('OK')) {
+      return
+    }
+    this.set('OK', true)
+    const where = this.get('mountpoint')
+    dialogs.notification(where && where !== '*' ? `Mounted ${this.bookmarkName} on ${where}` : `Mounted ${this.bookmarkName}`)
+    startNextWindowsMount()
+    fireRcloneUpdateActions()
+  }
+
   rcloneProcessWatchdogLine(logLine: string): void {
     const secrets = [String(this.childEnv?.RCLONE_PASS || ''), String(settings.get('rclone_serving_password') || '')].filter(Boolean)
     const safeLine = redactSecrets(logLine, secrets)
@@ -632,28 +644,29 @@ class BookmarkProcessManager {
       return
     }
 
+    if (kind === 'mount' && /^>Init:/.test(parsed.message) && !this.get('OK')) {
+      this.markMounted()
+      return
+    }
+
     if (kind === 'mount' && isMountAttemptLine(parsed) && !this.mountTimer && !this.get('OK')) {
       const letter = parsed.message.match(/Mounting on "([A-Za-z]:)/)
       if (letter) {
         this.set('mountpoint', letter[1])
       }
+      // Linux FUSE mounts do not log Init; elsewhere this only covers a missed line.
       this.mountTimer = setTimeout(() => {
         this.mountTimer = null
-        if (!this.exists() || this.get('OK')) {
-          return
-        }
-        this.set('OK', true)
-        dialogs.notification(`Mounted ${this.bookmarkName}`)
-        startNextWindowsMount()
-        fireRcloneUpdateActions()
-      }, 750)
+        this.markMounted()
+      }, process.platform === 'linux' ? 750 : 5000)
       return
     }
 
     if (kind === 'serve' && !this.get('OK') && parsed.level !== 'debug') {
       const uri = extractServeUrl(parsed.message)
       if (uri) {
-        dialogs.notification(parsed.message)
+        const protocol = this.processName.replace(/^serve_/, '') as ServeProtocol
+        dialogs.notification(`${serveProtocolLabel(protocol)} server for ${this.bookmarkName} is running at ${uri}`)
         this.set('OK', true)
         this.set('URI', uri)
         updateJob(this.id, { uri })
