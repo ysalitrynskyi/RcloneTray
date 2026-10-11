@@ -34,7 +34,7 @@ A simple desktop app that lives in your system tray and gives [Rclone](https://r
 - **Activity view** — see active and recent mounts, transfers, servers, logs, and failures.
 - **Bundled Rclone** — works out of the box, no separate install.
 - **Cross-platform** — Windows, macOS, and Linux.
-- **Automatic dark mode** — follows your system theme.
+- **Light and dark mode** — follows your system theme, or pick Light or Dark in Preferences.
 - **Secure by default** — sandboxed renderers with context isolation, a strict Content-Security-Policy, and checksum-verified bundled rclone.
 
 ## Install
@@ -53,12 +53,12 @@ To build from source instead, see [Development](#development).
 
 ### First launch
 
-The app is **not** code-signed (an Apple Developer ID and a Windows certificate both cost money — this app is free), so each OS shows a one-time warning for unknown apps. This is expected.
+Release builds are **not** code-signed yet, so each OS shows a one-time warning for unknown apps. This is expected.
 
 **macOS** — after installing from the `.dmg`, run this once in Terminal:
 
 ```bash
-xattr -d com.apple.quarantine /Applications/RcloneTray.app
+xattr -dr com.apple.quarantine /Applications/RcloneTray.app
 ```
 
 (Alternatively: right-click the app, choose **Open**, then **Open** again. The Terminal command is the most reliable.)
@@ -81,22 +81,24 @@ restricts the Chromium sandbox. Install the `.deb` instead, or see
 **Operating systems**
 
 - Windows 10 or 11 (x64, arm64)
-- macOS 12 or later (Intel and Apple Silicon)
+- macOS 13 or later (Intel and Apple Silicon)
 - Linux (x64) with a desktop environment that supports tray icons
 
 **Mounting (optional)**
 
 The mount feature needs a FUSE driver for your OS:
 
-| OS      | Required package                                                            |
-| ------- | -------------------------------------------------------------------------- |
-| Windows | [WinFsp](http://www.secfs.net/winfsp/download/)                            |
-| macOS   | [macFUSE](https://osxfuse.github.io/)                                      |
-| Linux   | `fuse` (e.g. `sudo apt install fuse` on Debian/Ubuntu)                     |
+| OS      | Required package                                                                     |
+| ------- | ------------------------------------------------------------------------------------ |
+| Windows | [WinFsp](https://winfsp.dev/rel/)                                                    |
+| macOS   | [macFUSE](https://osxfuse.github.io/) or [FUSE-T](https://www.fuse-t.org/)           |
+| Linux   | `fuse3` (e.g. `sudo apt install fuse3` on Debian/Ubuntu)                             |
 
 On macOS and Linux a mounted remote appears in your home folder as `mount.<type>.<name>`; on Windows it gets a free drive letter.
 
-If you would rather not install a FUSE driver, use the WebDAV serve feature instead.
+On macOS, restart after installing or updating macFUSE and allow its system extension when macOS asks. Mounting does not work until then.
+
+If you would rather not install a FUSE driver, turn on WebDAV in **Preferences → Serving** and use **Serve WebDAV** instead.
 
 ## Usage
 
@@ -123,7 +125,7 @@ Custom args**.
 <details>
 <summary><b>How do I use my own Rclone installation?</b></summary>
 
-Open **Preferences → Rclone** and uncheck **Use bundled Rclone**.
+Open **Preferences → Rclone** and uncheck **Use bundled**, then restart RcloneTray when it asks. RcloneTray looks for `rclone` on your `PATH` and also in `/opt/homebrew/bin` and `/usr/local/bin` on macOS.
 </details>
 
 <details>
@@ -135,7 +137,9 @@ Open **Preferences → Rclone → Mounting** and set **VFS cache mode** to **Wri
 <details>
 <summary><b>Why can't I mount my remote?</b></summary>
 
-Make sure the FUSE driver for your OS is installed — see [Requirements](#requirements).
+Make sure the FUSE driver for your OS is installed — see [Requirements](#requirements). Without one, **Mount** shows a notification that names the driver and where to get it. On macOS, restart after installing or updating macFUSE.
+
+Before 1.8.1, every mount on macOS failed with *"failed to retrieve mount path information: stat /Volumes/…"*. Update to the latest release.
 </details>
 
 <details>
@@ -152,25 +156,25 @@ RcloneTray uses the default Rclone location:
 - Windows: `%APPDATA%\rclone\rclone.conf`
 - macOS: `~/.config/rclone/rclone.conf`
 - Linux: `~/.config/rclone/rclone.conf`
+
+To use a different file, set **Preferences → Rclone → Config file**. Before its first change in each session, RcloneTray saves a timestamped copy next to it (`rclone.conf.<time>.bak`; the three newest are kept).
 </details>
 
 ## Troubleshooting
 
 <details>
-<summary><b>I picked S3 (or another provider) but only see the Name field.</b></summary>
+<summary><b>A provider field I expect is missing.</b></summary>
 
-This was a bug fixed in v1.6.0 — update to the latest release. The provider-specific
-fields (bucket, access key, region, etc.) now render as soon as you select a provider.
-If a field still seems missing, it's likely hidden because it only applies to a
-specific sub-provider; choose the matching **Provider** value and it will appear.
+Some fields only apply to a specific sub-provider (for example one S3 vendor). Choose
+the matching **Provider** value and the field appears. Rarely used options are on the
+**Advanced** tab.
 </details>
 
 <details>
 <summary><b>macOS: "RcloneTray can't be opened" / "Apple could not verify…"</b></summary>
 
-RcloneTray is free and unsigned (an Apple Developer ID costs $99/year). macOS
-quarantines unsigned apps. Either right-click the app → **Open** → **Open**, or run
-once in Terminal:
+Release builds are not signed or notarized yet, so macOS quarantines the app after
+download. Either right-click the app → **Open** → **Open**, or run once in Terminal:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/RcloneTray.app
@@ -180,10 +184,10 @@ xattr -dr com.apple.quarantine /Applications/RcloneTray.app
 <details>
 <summary><b>The bundled Rclone won't start (macOS).</b></summary>
 
-The same Gatekeeper quarantine can block the bundled `rclone` helper. RcloneTray now
+The same Gatekeeper quarantine can block the bundled `rclone` helper. RcloneTray
 tries to clear the quarantine attribute automatically on first run. If it still
 fails, either run the `xattr` command above, or open **Preferences → Rclone**,
-uncheck **Use bundled Rclone**, and install Rclone yourself:
+uncheck **Use bundled**, and install Rclone yourself:
 
 ```bash
 brew install rclone   # macOS (Homebrew)
@@ -193,14 +197,15 @@ brew install rclone   # macOS (Homebrew)
 <details>
 <summary><b>Nothing happens / an error pops up when I create a remote.</b></summary>
 
-Errors from Rclone are now surfaced in the dialog instead of being swallowed. Read
-the message — it usually points at a missing required field. You can always fall back
-to `rclone config` in the terminal to create the remote, then it appears in the tray.
+Errors from Rclone are shown in the dialog. Read the message — it usually points at a
+missing required field. You can always fall back to `rclone config` in the terminal to
+create the remote, then it appears in the tray. **Activity** in the tray menu shows
+the log of every recent rclone job.
 </details>
 
 ## Development
 
-**Prerequisites:** [Node.js](https://nodejs.org) v20+ and npm.
+**Prerequisites:** [Node.js](https://nodejs.org) 22.12+ and npm.
 
 ```bash
 git clone https://github.com/ysalitrynskyi/RcloneTray
@@ -220,6 +225,8 @@ npm start
 | `npm run test`          | Run unit and integration tests (Vitest)      |
 | `npm run test:coverage` | Run tests with a coverage report             |
 | `npm run test:e2e`      | Run E2E smoke tests (Playwright + Electron)  |
+| `npm run fetch-rclone`  | Download the bundled rclone (checksum-verified) |
+| `npm run pack`          | Build an unpacked app in `release/`          |
 | `npm run dist`          | Build distribution packages                  |
 
 **Project structure**
@@ -228,21 +235,28 @@ npm start
 src/                  TypeScript source
   main.ts             Main Electron process
   tray.ts             System tray menu
-  rclone.ts           Rclone integration
+  rclone.ts           Rclone integration (remotes, mount, sync, serve, jobs)
+  rclone/             Pure helpers: config editing, commands, logs, paths
   settings.ts         Settings storage
+  settings/           Atomic settings writes
+  ipc/                Validation of renderer requests
   dialogs.ts          Dialog windows
   dialogs-preload.ts  Preload (context bridge)
   types.ts            Shared types
   ui/                 HTML, CSS, icons
+scripts/              rclone download and packaging helpers
 dist/                 Compiled JavaScript
 tests/                Unit, integration, E2E tests
-rclone/               Bundled rclone binaries
+rclone/               Bundled rclone binaries (downloaded, not in git)
+docs/                 Getting Started and the maintainer handoff
 ```
 
 ## Changelog
 
 Recent highlights — see [CHANGELOG.md](CHANGELOG.md) for the full history.
 
+- **v1.8.1** — Mounting works on macOS: remotes mount in your home folder as `mount.<type>.<name>` instead of `/Volumes`, where every mount failed. Includes all of 1.8.0, which was not published on its own.
+- **v1.8.0** — `rclone.conf` safety: only the remote you change is touched, defaults and `[object Object]` are no longer written, any password works. Transfers, servers, automatic upload and quit fixed; Activity with live progress, Stop and Copy log; theme and many new Preferences; Electron 44 and rclone v1.74.4.
 - **v1.7.0** — Safety/release hardening: sync now blocks root/relative local paths and shows a dry-run preview before destructive runs; automatic upload copies changes without mirroring deletes; Activity shows rclone job state/logs; IPC/external links/terminal launch paths hardened; CI/release gates now verify tests, coverage, pinned rclone, and artifacts.
 - **v1.6.0** — Fixed provider forms showing only the Name field (S3 and others now render all fields); provider-specific options correctly show/hide per sub-provider; bundled Rclone auto-repairs macOS quarantine; cleaner dialog header; terminal/`rclone config` guidance in-app and in the docs. macOS is the primary tested platform.
 - **v1.5.1** — Fixed bookmark creation silently failing: errors (like a missing required S3 bucket) are now shown in the dialog instead of the window just closing.
@@ -253,11 +267,11 @@ Recent highlights — see [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 ## Contributing
 
-Contributions are welcome.
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the setup and the checks to run.
 
 1. Fork the repository.
 2. Create a feature branch: `git checkout -b feature/my-change`.
-3. Make your change and run `npm run test`.
+3. Make your change and run the checks from CONTRIBUTING.md.
 4. Commit and push, then open a Pull Request.
 
 ## Support

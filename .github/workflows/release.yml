@@ -176,6 +176,8 @@ jobs:
 
             System-tray GUI for [Rclone](https://rclone.org/) — mount, sync, and serve your remotes.
 
+            What changed: see the [changelog](https://github.com/ysalitrynskyi/RcloneTray/blob/master/CHANGELOG.md).
+
             ### Platform support
 
             **RcloneTray is developed and tested primarily on macOS.** Windows and Linux
@@ -187,19 +189,19 @@ jobs:
 
             | Platform | File |
             |----------|------|
-            | macOS (Intel + Apple Silicon) | `.dmg` / `.zip` |
+            | macOS 13+ (Intel `x64` / Apple Silicon `arm64`) | `.dmg` / `.zip` |
             | Windows (x64 / arm64) | `.exe` (NSIS installer) |
             | Linux (x64) | `.AppImage`, `.deb` |
 
             ### macOS first launch (unsigned app)
 
-            RcloneTray is **not** signed with an Apple Developer ID ($99/year — this app is free).
-            After installing from the `.dmg`, macOS may block it with *"Apple could not verify…"*. This is normal for free, unsigned open-source apps.
+            Release builds are **not** signed or notarized yet. After installing from the `.dmg`,
+            macOS may block the app with *"Apple could not verify…"*. This is expected.
 
             One-time fix (Terminal):
 
             ```bash
-            xattr -d com.apple.quarantine /Applications/RcloneTray.app
+            xattr -dr com.apple.quarantine /Applications/RcloneTray.app
             ```
 
             Or right-click the app → **Open** → **Open**. See

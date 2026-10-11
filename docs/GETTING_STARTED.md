@@ -20,8 +20,9 @@ and download the file for your operating system:
 | **macOS** (Intel or Apple Silicon) | `RcloneTray-<version>-x64.dmg` or `-arm64.dmg` |
 | **Linux** | `RcloneTray-<version>-x86_64.AppImage` or the `.deb` package |
 
-> Not sure which macOS file? Apple Silicon = M1/M2/M3/M4 Macs (2020+). Older Macs
-> are Intel (`x64`). If unsure, the `x64` build also runs on Apple Silicon.
+> Not sure which macOS file? Apple Silicon (M-series) Macs, 2020 and later, use
+> `arm64`. Older Macs are Intel (`x64`). The `x64` build also runs on Apple Silicon
+> through Rosetta, but `arm64` is faster there. RcloneTray needs macOS 13 or later.
 
 ---
 
@@ -31,21 +32,20 @@ and download the file for your operating system:
 
 1. Double-click the `.exe`.
 2. SmartScreen may say *"Windows protected your PC"* — this happens because the
-   app is **not** code-signed (signing costs money; this app is free). Click
-   **More info → Run anyway**.
+   app is **not** code-signed yet. Click **More info → Run anyway**.
 3. Follow the installer.
 
 ### macOS
 
 1. Open the `.dmg` and drag **RcloneTray** into your **Applications** folder.
 2. The first time you open it, macOS may say
-   *"Apple could not verify 'RcloneTray' is free of malware."* This is normal for
-   free, unsigned open-source apps. Fix it **once** in one of these ways:
+   *"Apple could not verify 'RcloneTray' is free of malware."* This happens because
+   release builds are not signed or notarized yet. Fix it **once** in one of these ways:
 
    **Option A — Terminal (most reliable):** open the Terminal app and paste:
 
    ```bash
-   xattr -d com.apple.quarantine /Applications/RcloneTray.app
+   xattr -dr com.apple.quarantine /Applications/RcloneTray.app
    ```
 
    Then open RcloneTray normally.
@@ -84,10 +84,13 @@ sudo dpkg -i RcloneTray-*.deb
 1. Launch RcloneTray — look for its icon in the system tray.
 2. Click the tray icon → **New Remote**.
 3. Pick your storage **provider** (e.g. Google Drive, Dropbox, S3).
-4. Fill in the connection details and **Save**. RcloneTray uses the same config
-   as rclone and changes only that remote. Existing rclone remotes show up
-   automatically. An encrypted `rclone.conf` is shown as read-only.
-5. Click the remote in the tray menu to **Mount**, **Sync**, or **Serve** it.
+4. Fill in the connection details and click **Create remote**. RcloneTray uses the
+   same config as rclone and changes only that remote. Existing rclone remotes show
+   up automatically. An encrypted `rclone.conf` is shown as read-only. For Google
+   Drive, Dropbox, OneDrive and other sign-in providers, your browser opens so you
+   can sign in.
+5. Click the remote in the tray menu to **Mount** it, **Upload** or **Download**
+   (set the local folder under **Edit → Mappings** first), or **Serve** it.
 6. Open **Activity** from the tray menu when you want to see running jobs, recent
    logs, or failures.
 
@@ -99,12 +102,20 @@ Mounting requires a FUSE driver for your OS:
 
 | OS | Install |
 |----|---------|
-| **Windows** | [WinFsp](http://www.secfs.net/winfsp/download/) |
-| **macOS** | [macFUSE](https://osxfuse.github.io/) |
-| **Linux** | `sudo apt install fuse` (Debian/Ubuntu) |
+| **Windows** | [WinFsp](https://winfsp.dev/rel/) |
+| **macOS** | [macFUSE](https://osxfuse.github.io/) or [FUSE-T](https://www.fuse-t.org/) |
+| **Linux** | `sudo apt install fuse3` (Debian/Ubuntu) |
 
-> No FUSE? Use the **Serve → WebDAV** option instead and connect with your file
-> manager.
+On macOS, restart your Mac after installing or updating macFUSE and allow its
+system extension when macOS asks. Mounting does not work until then.
+
+Where the mounted remote appears:
+- **macOS and Linux:** a folder in your home folder named `mount.<type>.<name>`
+  (for example `mount.drive.work`). It is removed again when you unmount.
+- **Windows:** a free drive letter.
+
+> No FUSE? Turn on **WebDAV** in **Preferences → Serving**, then use **Serve
+> WebDAV** on the remote and connect with your file manager.
 
 ---
 
@@ -112,20 +123,23 @@ Mounting requires a FUSE driver for your OS:
 
 **Do I need to install rclone separately?**
 No — a copy of rclone is bundled. To use your own instead:
-**Preferences → Rclone → uncheck "Use bundled Rclone"** (requires restart).
+**Preferences → Rclone → uncheck "Use bundled"** (requires restart).
 
 **Where is my configuration stored?**
 The standard rclone location:
 - Windows: `%APPDATA%\rclone\rclone.conf`
 - macOS/Linux: `~/.config/rclone/rclone.conf`
 
+You can point RcloneTray at another file in **Preferences → Rclone → Config file**.
+
 **How do I password-protect a served remote?**
 **Preferences → Serving** → set a username and password.
 
-**Why does Sync ask for confirmation?**
-`rclone sync` can overwrite or delete files at the destination. RcloneTray shows
-a dry-run preview first and blocks root/drive paths so a wrong mapping is harder
-to run accidentally.
+**Why do Upload and Download ask for confirmation?**
+They use `rclone sync`, which can overwrite or delete files at the destination.
+RcloneTray shows a dry-run preview first (how many files would be copied and
+deleted) and blocks root/drive paths so a wrong mapping is harder to run
+accidentally.
 
 **Something broke / I found a bug.**
 Please open an issue at
