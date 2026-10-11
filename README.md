@@ -94,6 +94,8 @@ The mount feature needs a FUSE driver for your OS:
 | macOS   | [macFUSE](https://osxfuse.github.io/)                                      |
 | Linux   | `fuse` (e.g. `sudo apt install fuse` on Debian/Ubuntu)                     |
 
+On macOS and Linux a mounted remote appears in your home folder as `mount.<type>.<name>`; on Windows it gets a free drive letter.
+
 If you would rather not install a FUSE driver, use the WebDAV serve feature instead.
 
 ## Usage
