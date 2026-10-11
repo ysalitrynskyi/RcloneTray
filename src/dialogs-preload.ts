@@ -104,22 +104,62 @@ function exampleMatchesProvider(providerRule: string | undefined): boolean {
   return invert ? !match : match
 }
 
-function trackField(inputField: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): void {
-  const token = (): string => inputField instanceof HTMLInputElement && inputField.type === 'checkbox'
-    ? (inputField.checked ? '1' : '0')
-    : inputField.value
-  inputField.dataset.track = '1'
-  inputField.dataset.initial = token()
-  const mark = (): void => {
-    if (token() !== inputField.dataset.initial) {
-      inputField.dataset.dirty = '1'
-    } else {
-      delete inputField.dataset.dirty
-    }
-  }
-  inputField.addEventListener('input', mark)
-  inputField.addEventListener('change', mark)
+interface TrackedFieldLike {
+  type?: string
+  checked?: boolean
+  value: string
+  dataset: Record<string, string | undefined>
 }
+
+function fieldToken(field: TrackedFieldLike): string {
+  return field.type === 'checkbox' ? (field.checked ? '1' : '0') : field.value
+}
+
+function isTrackedFieldChanged(field: TrackedFieldLike): boolean {
+  if (field.dataset.track !== '1') {
+    return false
+  }
+  return field.dataset.cleared === '1' || fieldToken(field) !== field.dataset.initial
+}
+
+function anyTrackedFieldChanged(fields: TrackedFieldLike[]): boolean {
+  return fields.some((field) => isTrackedFieldChanged(field))
+}
+
+function setFieldValueWithEvents(
+  field: { value: string; dispatchEvent: (event: Event) => boolean },
+  value: string,
+  createEvent: (type: string) => Event
+): void {
+  field.value = value
+  field.dispatchEvent(createEvent('input'))
+  field.dispatchEvent(createEvent('change'))
+}
+
+function hasStoredFieldValue(value: unknown): boolean {
+  return value !== undefined && value !== null && String(value) !== ''
+}
+
+function fieldPlaceholder(hasSavedValue: boolean, defaultValue: unknown): string {
+  return hasSavedValue ? 'Leave blank to keep the saved value' : String(defaultValue ?? '')
+}
+
+function trackField(inputField: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): void {
+  inputField.dataset.track = '1'
+  inputField.dataset.initial = fieldToken(inputField)
+}
+
+function trackForm(form: HTMLFormElement): void {
+  Array.from(form.elements).forEach((element) => {
+    const field = element as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+    if (!field.name || field.dataset.track === '1' || ['hidden', 'button', 'submit', 'reset', 'file'].includes(field.type)) {
+      return
+    }
+    trackField(field)
+  })
+}
+
+let markedClean = false
 
 function createHelpTextElement(help: string): HTMLDivElement {
   const fieldHelpText = document.createElement('div')
@@ -154,16 +194,6 @@ function createHelpTextElement(help: string): HTMLDivElement {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-  let dirty = false
-  let armed = false
-  window.setTimeout(() => {
-    armed = true
-  }, 800)
-  document.addEventListener('input', () => {
-    if (armed) {
-      dirty = true
-    }
-  })
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
       window.close()
@@ -177,7 +207,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   })
   window.addEventListener('beforeunload', (event) => {
-    if (!dirty) {
+    if (markedClean || !anyTrackedFieldChanged(Array.from(document.querySelectorAll<HTMLInputElement>('[data-track="1"]')))) {
       return
     }
     event.preventDefault()
@@ -207,6 +237,8 @@ declare global {
       errorBox: (message: string) => void
       notification: (message: string) => void
       resizeToContent: () => void
+      markClean: () => void
+      trackForm: (form: HTMLFormElement) => void
       selectDirectory: (defaultDirectory?: string) => Promise<string | null>
       selectFile: (defaultFile?: string) => Promise<string[]>
       selectFromMenu: (items: Array<{ label: string; value: string }>) => Promise<string | null>
@@ -294,6 +326,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('show-notification', { message })
   },
   resizeToContent: resizeToContentWindow,
+  markClean: (): void => {
+    markedClean = true
+  },
+  trackForm: (form: HTMLFormElement): void => {
+    trackForm(form)
+  },
   selectDirectory: async (defaultDirectory?: string): Promise<string | null> => {
     return await ipcRenderer.invoke('select-directory', { defaultDirectory })
   },
@@ -308,7 +346,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     Array.from(form.elements).forEach(element => {
       const el = element as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
       if (el.name && !el.disabled && !(el.type === 'radio' && !(el as HTMLInputElement).checked)) {
-        if (el.dataset.track === '1' && el.dataset.dirty !== '1') {
+        if (el.dataset.track === '1' && !isTrackedFieldChanged(el)) {
           return
         }
         const fieldValue = el.type === 'checkbox' ? (el as HTMLInputElement).checked : el.value
@@ -396,6 +434,7 @@ const htmlElementsApi = {
     optionFieldNamespace?: string, 
     value?: unknown
   ): HTMLDivElement {
+    const hasStoredValue = hasStoredFieldValue(value)
     if (value === undefined || value === null) {
       value = optionFieldDefinition.Value ?? optionFieldDefinition.Default
     }
@@ -453,8 +492,7 @@ const htmlElementsApi = {
         inputField = document.createElement('input')
         inputField.type = 'password'
         inputField.value = ''
-        if (value !== undefined && value !== null && String(value) !== '') {
-          inputField.placeholder = 'Leave blank to keep the saved value'
+        if (hasStoredValue) {
           inputField.dataset.saved = '1'
         }
         break
@@ -494,7 +532,7 @@ const htmlElementsApi = {
     }
     inputField.id = 'field_' + optionFieldDefinition.Name
     if ('placeholder' in inputField) {
-      inputField.placeholder = String(optionFieldDefinition.Default ?? '')
+      inputField.placeholder = fieldPlaceholder(inputField.dataset.saved === '1', optionFieldDefinition.Default)
     }
 
     td.appendChild(inputField)
@@ -511,12 +549,12 @@ const htmlElementsApi = {
         if (browseType === 'directory') {
           const selectedPath = await ipcRenderer.invoke('select-directory', { defaultDirectory: inputField.value }) as string | null
           if (selectedPath) {
-            inputField.value = selectedPath
+            setFieldValueWithEvents(inputField, selectedPath, (type) => new window.Event(type, { bubbles: true }))
           }
         } else {
           const selectedPaths = await ipcRenderer.invoke('select-file', inputField.value) as string[]
           if (selectedPaths && selectedPaths.length > 0) {
-            inputField.value = selectedPaths[0]
+            setFieldValueWithEvents(inputField, selectedPaths[0], (type) => new window.Event(type, { bubbles: true }))
           }
         }
       })
@@ -562,8 +600,7 @@ const htmlElementsApi = {
         })
         const selected = await ipcRenderer.invoke('show-select-menu', { items: menuItems }) as string | null
         if (selected) {
-          inputField.value = selected
-          inputField.dispatchEvent(new window.Event('change'))
+          setFieldValueWithEvents(inputField, selected, (type) => new window.Event(type, { bubbles: true }))
         }
       })
     }
@@ -610,9 +647,9 @@ const htmlElementsApi = {
       clearBox.addEventListener('change', () => {
         if (clearBox.checked) {
           inputField.value = ''
-          inputField.dataset.dirty = '1'
+          inputField.dataset.cleared = '1'
         } else {
-          delete inputField.dataset.dirty
+          delete inputField.dataset.cleared
         }
       })
       td.appendChild(clearLabel)
