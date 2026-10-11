@@ -69,7 +69,7 @@ describe('obscureSecret with the real rclone', () => {
       const obscured = await obscureSecret(rclone as string, secret, { timeoutMs: 20000 })
       expect(obscured.length).toBeGreaterThan(8)
       expect(obscured).not.toBe(secret)
-      const revealed = spawnSync(rclone as string, ['reveal', obscured], { encoding: 'utf8', windowsHide: true })
+      const revealed = spawnSync(rclone as string, ['reveal', '--', obscured], { encoding: 'utf8', windowsHide: true })
       expect(revealed.status).toBe(0)
       expect(revealed.stdout.replace(/\r?\n$/, '')).toBe(secret)
     })
