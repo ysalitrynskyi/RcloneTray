@@ -41,94 +41,110 @@
         list.appendChild(empty);
       }
 
+      function jobCardView(job) {
+        const logTail = Array.isArray(job.logTail) ? job.logTail : [];
+        return {
+          className: 'job-card status-' + job.status,
+          title: job.label || job.id,
+          status: job.status,
+          meta: [job.kind, job.bookmarkName, job.uri, job.message].filter(Boolean).join(' • '),
+          progress: job.progress || '',
+          logText: logTail.slice(-8).join('\n'),
+          fullLog: logTail.join('\n'),
+          canStop: job.status === 'running',
+          canCopy: logTail.length > 0
+        };
+      }
+
+      function setText(element, text) {
+        if (element.textContent !== text) {
+          element.textContent = text;
+        }
+      }
+
+      function setLogText(log, text) {
+        if (log.textContent === text) {
+          return;
+        }
+        const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 4;
+        const scrollTop = log.scrollTop;
+        log.textContent = text;
+        log.scrollTop = atBottom ? log.scrollHeight : scrollTop;
+      }
+
+      function setShown(element, shown) {
+        const display = shown ? '' : 'none';
+        if (element.style.display !== display) {
+          element.style.display = display;
+        }
+      }
+
+      function applyJobView(card, view) {
+        if (card.className !== view.className) card.className = view.className;
+        setText(card.querySelector('.job-title'), view.title);
+        setText(card.querySelector('.job-status'), view.status);
+        setText(card.querySelector('.job-meta'), view.meta);
+        const progress = card.querySelector('.job-progress');
+        setText(progress, view.progress);
+        setShown(progress, view.progress !== '');
+        const log = card.querySelector('.job-log');
+        setLogText(log, view.logText);
+        setShown(log, view.logText !== '');
+        card.fullLog = view.fullLog;
+        setShown(card.querySelector('.job-stop'), view.canStop);
+        setShown(card.querySelector('.job-copy'), view.canCopy);
+      }
+
       function renderJob(job) {
         const card = document.createElement('article');
-        card.className = 'job-card status-' + job.status;
         card.dataset.jobId = job.id;
 
         const top = document.createElement('div');
         top.className = 'job-topline';
-
         const title = document.createElement('div');
         title.className = 'job-title';
-        title.textContent = job.label || job.id;
-
         const status = document.createElement('span');
         status.className = 'job-status';
-        status.textContent = job.status;
-
         top.append(title, status);
-        card.appendChild(top);
 
         const meta = document.createElement('div');
         meta.className = 'job-meta';
-        meta.textContent = [
-          job.kind,
-          job.bookmarkName,
-          job.uri,
-          job.message
-        ].filter(Boolean).join(' • ');
-        card.appendChild(meta);
 
-        if (job.progress) {
-          const progress = document.createElement('div');
-          progress.className = 'job-progress';
-          progress.textContent = job.progress;
-          card.appendChild(progress);
-        }
+        const progress = document.createElement('div');
+        progress.className = 'job-progress';
 
-        if (Array.isArray(job.logTail) && job.logTail.length) {
-          const log = document.createElement('pre');
-          log.className = 'job-log';
-          log.textContent = job.logTail.slice(-8).join('\n');
-          card.appendChild(log);
-        }
+        const log = document.createElement('pre');
+        log.className = 'job-log';
 
         const actions = document.createElement('div');
-        if (job.status === 'running') {
-          const stop = document.createElement('button');
-          stop.type = 'button';
-          stop.textContent = 'Stop';
-          stop.addEventListener('click', async () => {
-            try {
-              await $main.jobs.stop(job.id);
-              refresh();
-            } catch (error) {
-              window.electronAPI.errorBox(error.message || String(error));
-            }
-          });
-          actions.appendChild(stop);
-        }
-        if (Array.isArray(job.logTail) && job.logTail.length) {
-          const copy = document.createElement('button');
-          copy.type = 'button';
-          copy.textContent = 'Copy log';
-          copy.addEventListener('click', async () => {
-            await navigator.clipboard.writeText(job.logTail.join('\n'));
-          });
-          actions.appendChild(copy);
-        }
-        if (actions.childNodes.length) {
-          card.appendChild(actions);
-        }
+        const stop = document.createElement('button');
+        stop.type = 'button';
+        stop.className = 'job-stop';
+        stop.textContent = 'Stop';
+        stop.addEventListener('click', async () => {
+          try {
+            await $main.jobs.stop(card.dataset.jobId);
+            refresh();
+          } catch (error) {
+            window.electronAPI.errorBox(error.message || String(error));
+          }
+        });
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.className = 'job-copy';
+        copy.textContent = 'Copy log';
+        copy.addEventListener('click', async () => {
+          await navigator.clipboard.writeText(card.fullLog || '');
+        });
+        actions.append(stop, copy);
 
+        card.append(top, meta, progress, log, actions);
+        applyJobView(card, jobCardView(job));
         return card;
       }
 
       function updateCard(card, job) {
-        card.className = 'job-card status-' + job.status;
-        const title = card.querySelector('.job-title');
-        const status = card.querySelector('.job-status');
-        const meta = card.querySelector('.job-meta');
-        const log = card.querySelector('.job-log');
-        const progress = card.querySelector('.job-progress');
-        if (title) title.textContent = job.label || job.id;
-        if (status) status.textContent = job.status;
-        if (meta) {
-          meta.textContent = [job.kind, job.bookmarkName, job.uri, job.message, job.progress].filter(Boolean).join(' • ');
-        }
-        if (progress) progress.textContent = job.progress || '';
-        if (log && Array.isArray(job.logTail)) log.textContent = job.logTail.slice(-8).join('\n');
+        applyJobView(card, jobCardView(job));
       }
 
       async function refresh() {
