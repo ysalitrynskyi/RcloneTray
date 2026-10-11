@@ -66,7 +66,7 @@ const RcloneBinaryName: string = process.platform === 'win32' ? 'rclone.exe' : '
 
 /**
  * Map Node's process.arch values to the architecture folder names produced by
- * update-rclone-binaries.sh (which uses rclone/Go naming). Without this mapping
+ * scripts/fetch-rclone.js (which uses rclone/Go naming). Without this mapping
  * the bundled binary cannot be found on x64 (Node) vs amd64 (rclone) etc.
  */
 const RcloneArchMap: Record<string, string> = {

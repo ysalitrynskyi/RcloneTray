@@ -32,7 +32,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
@@ -70,16 +70,19 @@ jobs:
           - os: macos-latest
             name: macOS
             rclone: darwin
+            rclone_arch: amd64,arm64
             builder_args: --mac --x64 --arm64
             expected_artifacts: 4
           - os: windows-latest
             name: Windows
             rclone: win32
+            rclone_arch: amd64,386,arm64
             builder_args: --win --x64 --ia32 --arm64
             expected_artifacts: 3
           - os: ubuntu-latest
             name: Linux
             rclone: linux
+            rclone_arch: amd64
             builder_args: --linux --x64
             expected_artifacts: 2
 
@@ -90,15 +93,15 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
-      - name: Download rclone binaries (${{ matrix.rclone }})
+      - name: Download rclone binaries (${{ matrix.rclone }}, checksum-verified)
         shell: bash
-        run: ./update-rclone-binaries.sh ${{ matrix.rclone }}
+        run: node scripts/fetch-rclone.js --platform ${{ matrix.rclone }} --arch ${{ matrix.rclone_arch }}
 
       - name: Build TypeScript
         run: npm run build
@@ -165,6 +168,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist-release/*
+          draft: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
           body: |
             ## RcloneTray ${{ github.ref_name }}
