@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-10-11
+
+### Fixed
+- Mounting works on macOS again. RcloneTray mounted under `/Volumes`, which
+  rclone rejects when the folder does not exist and which only root can create,
+  so every mount failed with "failed to retrieve mount path information". Remotes
+  are now mounted in your home folder as `mount.<type>.<name>`, as on Linux. The
+  folder is created for the mount and removed afterwards, and a dead mount left
+  behind by a crash is cleared before the next mount.
+
 ## [1.8.0] - 2026-10-11
 
 A large correctness release. The biggest fixes protect `rclone.conf`: adding or

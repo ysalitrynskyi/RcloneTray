@@ -34,6 +34,7 @@ import {
 import { assertNewRemoteName } from './rclone/remote-name'
 import { getJobStates as listJobStates, startJob, appendJobLog, updateJob, finishJob, clearFinishedJobs as dropFinishedJobs, JobKind } from './rclone/job-state'
 import { getSyncLocalPathError } from './rclone/path-safety'
+import { mountpointFor } from './rclone/mountpoint'
 import {
   Bookmark,
   BookmarksCache,
@@ -1410,11 +1411,15 @@ function recoverStaleMount(mountpoint: string): void {
     }
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
-    if (code !== 'ENOTCONN' && code !== 'EIO') {
+    if (code !== 'ENOTCONN' && code !== 'EIO' && code !== 'ENXIO') {
       return
     }
-    spawnSync('fusermount', ['-u', mountpoint], { windowsHide: true })
-    spawnSync('fusermount3', ['-u', mountpoint], { windowsHide: true })
+    if (process.platform === 'darwin') {
+      spawnSync('/sbin/umount', ['-f', mountpoint])
+    } else {
+      spawnSync('fusermount', ['-u', mountpoint], { windowsHide: true })
+      spawnSync('fusermount3', ['-u', mountpoint], { windowsHide: true })
+    }
     try {
       fs.rmdirSync(mountpoint)
     } catch {
@@ -1471,15 +1476,8 @@ export function mount(bookmark: Bookmark | string): void {
     return
   }
 
-  let mountpoint: string
-  if (process.platform === 'win32') {
-    // Let WinFsp choose a free letter. Picking one ourselves races when two mounts start together.
-    mountpoint = '*'
-  } else if (process.platform === 'linux') {
-    mountpoint = path.join(os.homedir(), `mount.${bm.type}.${bm.$name}`)
-  } else {
-    mountpoint = path.join('/', 'Volumes', `${bm.type}.${bm.$name}`)
-  }
+  // On Windows WinFsp picks a free letter. Picking one ourselves races when two mounts start together.
+  const mountpoint = mountpointFor(process.platform, os.homedir(), bm.type, bm.$name)
 
   if (process.platform !== 'win32') {
     recoverStaleMount(mountpoint)
@@ -1497,7 +1495,7 @@ export function mount(bookmark: Bookmark | string): void {
   if (!mountpoint || mountpointBusy) {
     throw new Error(`Destination mountpoint "${mountpoint}" is not free.`)
   }
-  if (process.platform === 'linux' && !mountpointDirectoryExists) {
+  if (process.platform !== 'win32' && !mountpointDirectoryExists) {
     fs.mkdirSync(mountpoint)
   }
 
@@ -1514,7 +1512,7 @@ export function mount(bookmark: Bookmark | string): void {
   proc.create(mountArgs)
   proc.set('mountpoint', mountpoint)
 
-  if (process.platform === 'linux') {
+  if (process.platform !== 'win32') {
     proc.getProcess().on('close', () => {
       freeMountpointDirectory(mountpoint)
     })

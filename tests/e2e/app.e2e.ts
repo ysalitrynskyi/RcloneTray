@@ -24,6 +24,9 @@ function setupTestDirectories(): void {
   }
   fs.mkdirSync(path.join(TEST_DATA_DIR, 'config'), { recursive: true })
   fs.mkdirSync(path.join(TEST_DATA_DIR, 'settings'), { recursive: true })
+  // An existing settings file skips the first-run welcome alert. On macOS that
+  // alert is modal and blocks the main process until someone clicks OK.
+  fs.writeFileSync(path.join(TEST_DATA_DIR, 'settings', 'settings.json'), JSON.stringify({ check_updates: false }))
 }
 
 function cleanupTestDirectories(): void {
